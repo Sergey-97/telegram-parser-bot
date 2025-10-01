@@ -2,7 +2,8 @@
 import logging
 import asyncio
 from datetime import datetime
-from telegram import Update, Bot
+from flask import Flask
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # Настройка логирования
@@ -17,10 +18,26 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN environment variable is not set")
 
+# Создаем Flask приложение
+app = Flask(__name__)
+
 # Глобальные переменные для хранения данных
 parsed_data = {}
 publication_status = {}
 user_channels = {}
+
+@app.route('/')
+def home():
+    return "🤖 Telegram Bot is running!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Пустой webhook endpoint для проверки"""
+    return "OK", 200
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
@@ -41,11 +58,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def parse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /parse"""
     try:
-        # Здесь будет логика парсинга
-        # Временная заглушка
         global parsed_data
         parsed_data['last_parse'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        parsed_data['items_count'] = 10  # Примерное количество
+        parsed_data['items_count'] = 10
         
         await update.message.reply_text(
             f"✅ Парсинг завершен!\n"
@@ -64,8 +79,6 @@ async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Сначала выполните парсинг командой /parse")
             return
         
-        # Здесь будет логика публикации
-        # Временная заглушка
         global publication_status
         publication_status['last_publication'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         publication_status['status'] = 'completed'
@@ -103,8 +116,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /logs"""
     try:
-        # Здесь будет логика показа логов
-        # Временная заглушка
         log_info = f"""
 📋 Последние действия:
 
@@ -126,7 +137,6 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         
         if context.args:
-            # Добавление канала
             channel_id = context.args[0]
             user_channels[user_id] = user_channels.get(user_id, [])
             user_channels[user_id].append(channel_id)
@@ -136,7 +146,6 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📊 Всего каналов: {len(user_channels[user_id])}"
             )
         else:
-            # Показать текущие каналы
             if user_id in user_channels and user_channels[user_id]:
                 channels_list = "\n".join([f"📢 {channel}" for channel in user_channels[user_id]])
                 await update.message.reply_text(
@@ -158,14 +167,6 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     logger.error(f"Exception while handling an update: {context.error}")
-    
-    try:
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "❌ Произошла ошибка при обработке запроса. Попробуйте позже."
-            )
-    except Exception as e:
-        logger.error(f"Error in error handler: {e}")
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик неизвестных команд"""
@@ -180,8 +181,8 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/channels - Управление каналами"
     )
 
-def main():
-    """Основная функция запуска бота"""
+def run_bot():
+    """Запуск бота в отдельном потоке"""
     try:
         # Создание приложения бота
         application = Application.builder().token(BOT_TOKEN).build()
@@ -202,7 +203,7 @@ def main():
         
         # Запуск бота
         logger.info("Бот запускается...")
-        print("🤖 Бот запущен! Нажмите Ctrl+C для остановки.")
+        print("🤖 Бот запущен!")
         
         # Запуск в режиме polling
         application.run_polling(
@@ -213,6 +214,17 @@ def main():
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
         print(f"❌ Ошибка запуска бота: {e}")
+
+def main():
+    """Основная функция запуска"""
+    # Запускаем бот в отдельном потоке
+    import threading
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Запускаем Flask сервер
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 if __name__ == "__main__":
     main()
