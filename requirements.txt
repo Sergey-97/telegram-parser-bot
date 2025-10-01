@@ -1,1 +1,13 @@
-﻿python-telegram-bot==21.7telethon==1.28.5transformers==4.45.1torch==2.5.1 --index-url https://download.pytorch.org/whl/cpusqlalchemy==2.0.36schedule==1.2.1requests==2.32.3beautifulsoup4==4.12.3aiohttp==3.9.5flask==3.0.3psycopg2-binary==2.9.10python-dotenv==1.0.1pillow==10.4.0
+﻿python-telegram-bot==21.7
+telethon==1.28.5
+transformers==4.45.1
+torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+sqlalchemy==2.0.36
+schedule==1.2.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+aiohttp==3.9.5
+flask==3.0.3
+psycopg2-binary==2.9.10
+python-dotenv==1.0.1
+pillow==10.4.0
