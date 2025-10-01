@@ -1,8 +1,9 @@
 ﻿python-telegram-bot==21.7
-telethon==1.28.6
+telethon==1.28.5
 sqlalchemy==2.0.36
 schedule==1.2.1
 requests==2.32.3
 aiohttp==3.9.5
 flask==3.0.3
 python-dotenv==1.0.1
+pillow==10.4.0
