@@ -1,5 +1,5 @@
 ﻿python-telegram-bot==21.7
-telethon==1.28.5
+telethon==1.28.6
 sqlalchemy==2.0.36
 schedule==1.2.1
 requests==2.32.3
