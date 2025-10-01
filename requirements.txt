@@ -1,7 +1,7 @@
-﻿python-telegram-bot==13.15
+﻿python-telegram-bot==21.7
 telethon==1.28.5
-sqlalchemy==1.4.46
-schedule==1.2.0
-requests==2.31.0
-aiohttp==3.8.4
-flask==2.3.3
+sqlalchemy==2.0.36
+schedule==1.2.1
+requests==2.32.3
+aiohttp==3.9.5
+flask==3.0.3
