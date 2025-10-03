@@ -5,6 +5,7 @@ import os
 import logging
 import threading
 from flask import Flask
+from waitress import serve  # Production WSGI server
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,11 +36,20 @@ def status():
 def ping():
     return {'ping': 'pong'}
 
+@app.route('/info')
+def info():
+    return {
+        'service': 'Telegram Parser Bot',
+        'version': '1.0',
+        'environment': 'production' if os.environ.get('RENDER', False) else 'development'
+    }
+
 def run_health_check():
-    """Запускает Flask сервер для health check"""
+    """Запускает Flask сервер для health check с Waitress (production)"""
     try:
-        print("🏥 Запускаем health check сервер на порту 10000...")
-        app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)
+        print("🏥 Запускаем production health check сервер на порту 10000...")
+        # Используем Waitress вместо dev сервера Flask
+        serve(app, host='0.0.0.0', port=10000, threads=4)
     except Exception as e:
         print(f"❌ Ошибка health check сервера: {e}")
 
@@ -49,7 +59,7 @@ def start_health_check():
         health_thread = threading.Thread(target=run_health_check)
         health_thread.daemon = True
         health_thread.start()
-        print("✅ Health check сервер запущен")
+        print("✅ Production health check сервер запущен на порту 10000")
         return health_thread
     except Exception as e:
         print(f"⚠️ Не удалось запустить health check: {e}")
@@ -73,6 +83,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /test - тестовая команда
 /status - показать статус бота
 /channels - показать список каналов
+/ping - проверить связь
 
 Бот работает на Render.com и доступен 24/7!
     """
@@ -93,7 +104,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 • 🌐 Окружение: {'🚀 Production' if os.environ.get('RENDER', False) else '🔧 Development'}
 • 🤖 Статус: 🟢 Активен
-• 🏥 Health check: 🟢 Работает
+• 🏥 Health check: 🟢 Работает (Production)
 
 Бот успешно запущен и готов к работе!
     """
@@ -103,7 +114,7 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает список отслеживаемых каналов"""
     channels_text = "📡 **Отслеживаемые каналы:**\n\n"
     
-    channels_text += "**🎯 Основные каналов:**\n"
+    channels_text += "**🎯 Основные каналы:**\n"
     for i, channel in enumerate(SOURCE_CHANNELS, 1):
         channels_text += f"{i}. {channel}\n"
         
@@ -118,6 +129,25 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Проверка связи"""
     await update.message.reply_text("🏓 Понг! Бот активен.")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Справка по командам"""
+    help_text = """
+📋 **Доступные команды:**
+
+/start - Начало работы
+/help - Справка по командам  
+/test - Тест работы бота
+/status - Статус бота
+/channels - Список каналов
+/ping - Проверка связи
+
+⚙️ **Скоро будет доступно:**
+/parse - Ручной парсинг
+/publish - Ручная публикация
+/logs - Просмотр логов
+    """
+    await update.message.reply_text(help_text)
 
 def main():
     """Основная функция запуска"""
@@ -134,7 +164,7 @@ def main():
         return
     
     try:
-        # Запускаем health check сервер
+        # Запускаем production health check сервер
         health_thread = start_health_check()
         
         # Создаем приложение бота
@@ -146,15 +176,17 @@ def main():
         application.add_handler(CommandHandler("status", status_command))
         application.add_handler(CommandHandler("channels", channels_command))
         application.add_handler(CommandHandler("ping", ping_command))
+        application.add_handler(CommandHandler("help", help_command))
         
         print("=" * 50)
         print("🤖 Telegram Parser Bot запускается...")
         print(f"🎯 Целевой канал: {TARGET_CHANNEL}")
         print(f"📡 Исходных каналов: {len(SOURCE_CHANNELS)}")
         print(f"💬 Каналов обсуждений: {len(DISCUSSION_CHANNELS)}")
+        print("🏥 Health check: Production режим")
         print("=" * 50)
         
-        logger.info("🤖 Бот запускается...")
+        logger.info("🤖 Бот запускается в production режиме...")
         
         # Запускаем бота (блокирующий вызов)
         print("🔄 Запускаем polling...")
