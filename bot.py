@@ -1,26 +1,22 @@
-﻿from telegram import Update
+﻿from health_check import start_health_check
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from config import BOT_TOKEN, TARGET_CHANNEL, SOURCE_CHANNELS, DISCUSSION_CHANNELS
 import asyncio
 import os
 import logging
-from datetime import datetime
-import threading
-import time
+import sys
 
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
     handlers=[
-        logging.StreamHandler(),  # Вывод в консоль
-        logging.FileHandler('bot.log', encoding='utf-8')  # Запись в файл
+        logging.StreamHandler(),
+        logging.FileHandler('bot.log', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Глобальная переменная для приложения
-application = None
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
@@ -42,10 +38,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /status - показать статус бота
 /logs - показать последние логи
 /channels - показать список каналов
+/test - тестовая команда
 
 Бот работает на Render.com и доступен 24/7!
     """
     await update.message.reply_text(welcome_text)
+
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Тестовая команда для проверки работы"""
+    await update.message.reply_text("✅ Бот работает! Команды обрабатываются корректно.")
 
 async def parse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ручной запуск парсинга"""
@@ -119,7 +120,7 @@ async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         with open('bot.log', 'r', encoding='utf-8') as f:
             lines = f.readlines()
-            log_lines = lines[-15:]  # Последние 15 строк
+            log_lines = lines[-10:]  # Последние 10 строк
         
         log_text = "📋 **Последние логи:**\n\n" + "".join(log_lines) if log_lines else "Логи пока пусты"
         
@@ -154,42 +155,36 @@ async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Ошибка при показе каналов: {e}")
         await update.message.reply_text(f"❌ Ошибка при показе каналов: {e}")
 
-async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Тестовая команда для проверки работы"""
-    await update.message.reply_text("✅ Бот работает! Команды обрабатываются корректно.")
-
 def setup_handlers(app):
     """Настраивает обработчики команд"""
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("test", test_command))
     app.add_handler(CommandHandler("parse", parse_command))
     app.add_handler(CommandHandler("publish", publish_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("logs", logs_command))
     app.add_handler(CommandHandler("channels", channels_command))
-    app.add_handler(CommandHandler("test", test_command))
 
-async def run_bot_async():
-    """Асинхронный запуск бота"""
-    global application
+async def main():
+    """Основная асинхронная функция"""
+    # Проверяем обязательные переменные окружения
+    required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN']
+    missing_vars = [var for var in required_vars if not os.environ.get(var)]
+    
+    if missing_vars:
+        error_msg = f"❌ Отсутствуют обязательные переменные окружения: {missing_vars}"
+        logger.error(error_msg)
+        print(error_msg)
+        print("Пожалуйста, установите их в настройках Render.com")
+        return
     
     try:
-        # Проверяем обязательные переменные окружения
-        required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN']
-        missing_vars = [var for var in required_vars if not os.environ.get(var)]
-        
-        if missing_vars:
-            error_msg = f"❌ Отсутствуют обязательные переменные окружения: {missing_vars}"
-            logger.error(error_msg)
-            print(error_msg)
-            return
-        
         # Создаем приложение бота
         application = Application.builder().token(BOT_TOKEN).build()
         
         # Настраиваем обработчики
         setup_handlers(application)
         
-        logger.info("🤖 Бот запускается...")
         print("=" * 50)
         print("🤖 Telegram Parser Bot запускается...")
         print(f"🎯 Целевой канал: {TARGET_CHANNEL}")
@@ -197,54 +192,16 @@ async def run_bot_async():
         print(f"💬 Каналов обсуждений: {len(DISCUSSION_CHANNELS)}")
         print("=" * 50)
         
+        logger.info("🤖 Бот запускается...")
+        
         # Запускаем бота
         await application.run_polling()
         
     except Exception as e:
-        logger.error(f"❌ Ошибка запуска бота: {e}")
-        print(f"❌ Ошибка запуска бота: {e}")
-
-def run_bot():
-    """Запускает бота в отдельном потоке с asyncio"""
-    try:
-        # Создаем новый event loop для этого потока
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Запускаем бота
-        loop.run_until_complete(run_bot_async())
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка в потоке бота: {e}")
-        print(f"❌ Ошибка в потоке бота: {e}")
-
-def main():
-    """Основная функция запуска"""
-    print("🚀 Инициализация Telegram бота...")
-    
-    # Проверяем переменные окружения
-    required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN']
-    missing_vars = [var for var in required_vars if not os.environ.get(var)]
-    
-    if missing_vars:
-        error_msg = f"❌ Отсутствуют обязательные переменные окружения: {missing_vars}"
-        print(error_msg)
-        print("Пожалуйста, установите их в настройках Render.com")
-        return
-    
-    # Запускаем бота в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    print("✅ Бот запущен в отдельном потоке")
-    print("📡 Ожидаем сообщения...")
-    
-    # Держим основной поток активным
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        print("\n🛑 Бот остановлен")
+        logger.error(f"❌ Критическая ошибка запуска бота: {e}")
+        print(f"❌ Критическая ошибка запуска бота: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
-    main()
+    # Запускаем в основном потоке
+    asyncio.run(main())
