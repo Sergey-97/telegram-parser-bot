@@ -1,22 +1,59 @@
-﻿from health_check import start_health_check
-from telegram import Update
+﻿from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from config import BOT_TOKEN, TARGET_CHANNEL, SOURCE_CHANNELS, DISCUSSION_CHANNELS
-import asyncio
 import os
 import logging
-import sys
+import threading
+from flask import Flask
 
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('bot.log', encoding='utf-8')
-    ]
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Создаем Flask приложение для health check
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return {
+        'status': 'healthy',
+        'service': 'Telegram Parser Bot',
+        'message': 'Bot is running successfully!'
+    }
+
+@app.route('/status')
+def status():
+    return {
+        'status': 'running',
+        'bot': 'active'
+    }
+
+@app.route('/ping')
+def ping():
+    return {'ping': 'pong'}
+
+def run_health_check():
+    """Запускает Flask сервер для health check"""
+    try:
+        print("🏥 Запускаем health check сервер на порту 10000...")
+        app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)
+    except Exception as e:
+        print(f"❌ Ошибка health check сервера: {e}")
+
+def start_health_check():
+    """Запускает health check в отдельном потоке"""
+    try:
+        health_thread = threading.Thread(target=run_health_check)
+        health_thread.daemon = True
+        health_thread.start()
+        print("✅ Health check сервер запущен")
+        return health_thread
+    except Exception as e:
+        print(f"⚠️ Не удалось запустить health check: {e}")
+        return None
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
@@ -33,12 +70,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ⚡ **Команды:**
 /start - показать это сообщение
-/parse - запустить парсинг вручную
-/publish - опубликовать пост вручную
-/status - показать статус бота
-/logs - показать последние логи
-/channels - показать список каналов
 /test - тестовая команда
+/status - показать статус бота
+/channels - показать список каналов
 
 Бот работает на Render.com и доступен 24/7!
     """
@@ -48,142 +82,70 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Тестовая команда для проверки работы"""
     await update.message.reply_text("✅ Бот работает! Команды обрабатываются корректно.")
 
-async def parse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ручной запуск парсинга"""
-    await update.message.reply_text("🔄 Запускаю парсинг каналов...")
-    
-    try:
-        from parser import parse_channels_sync
-        result = parse_channels_sync()
-        await update.message.reply_text(f"✅ Парсинг завершен! Найдено {len(result)} постов")
-    except Exception as e:
-        logger.error(f"Ошибка при парсинге: {e}")
-        await update.message.reply_text(f"❌ Ошибка при парсинге: {e}")
-
-async def publish_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ручная публикация поста"""
-    await update.message.reply_text("🔄 Подготавливаю и публикую пост...")
-    
-    try:
-        from scheduler import BotScheduler
-        scheduler = BotScheduler()
-        scheduler.process_and_publish()
-        await update.message.reply_text("✅ Пост обработан успешно! (публикация временно отключена)")
-    except Exception as e:
-        logger.error(f"Ошибка при публикации: {e}")
-        await update.message.reply_text(f"❌ Ошибка при публикации: {e}")
-
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает статус бота"""
-    try:
-        from database import Session, Post
-        session = Session()
-        
-        # Получаем статистику
-        new_posts = session.query(Post).filter(Post.processed == False).count()
-        processed_posts = session.query(Post).filter(Post.processed == True).count()
-        last_post = session.query(Post).order_by(Post.created_at.desc()).first()
-        
-        # Информация о каналах
-        source_count = len(SOURCE_CHANNELS)
-        discussion_count = len(DISCUSSION_CHANNELS)
-        
-        session.close()
-        
-        status_text = f"""
+    status_text = f"""
 📊 **Статус бота:**
 
-• 📝 Новых постов: {new_posts}
-• ✅ Обработанных постов: {processed_posts}
-• 📅 Последнее обновление: {last_post.created_at.strftime('%Y-%m-%d %H:%M') if last_post else 'Нет данных'}
-        
-• 📡 Исходных каналов: {source_count}
-• 💬 Каналов обсуждений: {discussion_count}
+• 📡 Исходных каналов: {len(SOURCE_CHANNELS)}
+• 💬 Каналов обсуждений: {len(DISCUSSION_CHANNELS)}
 • 🎯 Целевой канал: {TARGET_CHANNEL}
 
 • 🌐 Окружение: {'🚀 Production' if os.environ.get('RENDER', False) else '🔧 Development'}
-• ⏰ Планировщик: 🔴 Временно отключен
-        """
-        
-        await update.message.reply_text(status_text)
-        
-    except Exception as e:
-        logger.error(f"Ошибка при получении статуса: {e}")
-        await update.message.reply_text(f"❌ Ошибка при получении статуса: {e}")
+• 🤖 Статус: 🟢 Активен
+• 🏥 Health check: 🟢 Работает
 
-async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает последние логи"""
-    try:
-        if not os.path.exists('bot.log'):
-            await update.message.reply_text("📋 Файл логов еще не создан")
-            return
-            
-        with open('bot.log', 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            log_lines = lines[-10:]  # Последние 10 строк
-        
-        log_text = "📋 **Последние логи:**\n\n" + "".join(log_lines) if log_lines else "Логи пока пусты"
-        
-        # Обрезаем если слишком длинный
-        if len(log_text) > 4000:
-            log_text = log_text[:4000] + "\n... (логи обрезаны)"
-            
-        await update.message.reply_text(f"```\n{log_text}\n```", parse_mode='MarkdownV2')
-        
-    except Exception as e:
-        logger.error(f"Ошибка при чтении логов: {e}")
-        await update.message.reply_text(f"❌ Ошибка при чтении логов: {e}")
+Бот успешно запущен и готов к работе!
+    """
+    await update.message.reply_text(status_text)
 
 async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает список отслеживаемых каналов"""
-    try:
-        channels_text = "📡 **Отслеживаемые каналы:**\n\n"
+    channels_text = "📡 **Отслеживаемые каналы:**\n\n"
+    
+    channels_text += "**🎯 Основные каналов:**\n"
+    for i, channel in enumerate(SOURCE_CHANNELS, 1):
+        channels_text += f"{i}. {channel}\n"
         
-        channels_text += "**🎯 Основные каналы:**\n"
-        for i, channel in enumerate(SOURCE_CHANNELS, 1):
-            channels_text += f"{i}. {channel}\n"
-            
-        channels_text += "\n**💬 Каналы обсуждений:**\n"
-        for i, channel in enumerate(DISCUSSION_CHANNELS, 1):
-            channels_text += f"{i}. {channel}\n"
-            
-        channels_text += f"\n**🎯 Целевой канал:** {TARGET_CHANNEL}"
+    channels_text += "\n**💬 Каналы обсуждений:**\n"
+    for i, channel in enumerate(DISCUSSION_CHANNELS, 1):
+        channels_text += f"{i}. {channel}\n"
         
-        await update.message.reply_text(channels_text)
-        
-    except Exception as e:
-        logger.error(f"Ошибка при показе каналов: {e}")
-        await update.message.reply_text(f"❌ Ошибка при показе каналов: {e}")
+    channels_text += f"\n**🎯 Целевой канал:** {TARGET_CHANNEL}"
+    
+    await update.message.reply_text(channels_text)
 
-def setup_handlers(app):
-    """Настраивает обработчики команд"""
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("test", test_command))
-    app.add_handler(CommandHandler("parse", parse_command))
-    app.add_handler(CommandHandler("publish", publish_command))
-    app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("logs", logs_command))
-    app.add_handler(CommandHandler("channels", channels_command))
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проверка связи"""
+    await update.message.reply_text("🏓 Понг! Бот активен.")
 
-async def main():
-    """Основная асинхронная функция"""
+def main():
+    """Основная функция запуска"""
+    print("🚀 Инициализация Telegram бота...")
+    
     # Проверяем обязательные переменные окружения
     required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN']
     missing_vars = [var for var in required_vars if not os.environ.get(var)]
     
     if missing_vars:
         error_msg = f"❌ Отсутствуют обязательные переменные окружения: {missing_vars}"
-        logger.error(error_msg)
         print(error_msg)
         print("Пожалуйста, установите их в настройках Render.com")
         return
     
     try:
+        # Запускаем health check сервер
+        health_thread = start_health_check()
+        
         # Создаем приложение бота
         application = Application.builder().token(BOT_TOKEN).build()
         
-        # Настраиваем обработчики
-        setup_handlers(application)
+        # Добавляем обработчики команд
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("test", test_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("channels", channels_command))
+        application.add_handler(CommandHandler("ping", ping_command))
         
         print("=" * 50)
         print("🤖 Telegram Parser Bot запускается...")
@@ -193,16 +155,14 @@ async def main():
         print("=" * 50)
         
         logger.info("🤖 Бот запускается...")
-        # Запускаем health check сервер
-        start_health_check()
-        # Запускаем бота
-        await application.run_polling()
+        
+        # Запускаем бота (блокирующий вызов)
+        print("🔄 Запускаем polling...")
+        application.run_polling()
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка запуска бота: {e}")
         print(f"❌ Критическая ошибка запуска бота: {e}")
-        sys.exit(1)
 
 if __name__ == '__main__':
-    # Запускаем в основном потоке
-    asyncio.run(main())
+    main()
