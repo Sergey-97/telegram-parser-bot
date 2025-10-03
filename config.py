@@ -1,31 +1,36 @@
 import os
+from dotenv import load_dotenv
 
-# Настройки Telegram API
-API_ID = os.environ.get('API_ID', '')
-API_HASH = os.environ.get('API_HASH', '')
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
+# Загружаем переменные из .env файла
+load_dotenv()
 
 # Проверяем обязательные переменные
-if not all([API_ID, API_HASH, BOT_TOKEN]):
-    print("❌ ВНИМАНИЕ: Не установлены обязательные переменные окружения: API_ID, API_HASH, BOT_TOKEN")
+required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN']
+missing_vars = [var for var in required_vars if not os.getenv(var)]
 
-# Настройки парсинга
-PARSE_INTERVAL_DAYS = int(os.environ.get('PARSE_INTERVAL_DAYS', '1'))  # 1 день для актуальности
-MAX_POSTS_PER_CHANNEL = int(os.environ.get('MAX_POSTS_PER_CHANNEL', '5'))  # Последние 5 постов
-PUBLISH_TIME = os.environ.get('PUBLISH_TIME', "10:00")
+if missing_vars:
+    print(f"❌ ВНИМАНИЕ: Не установлены обязательные переменные окружения: {', '.join(missing_vars)}")
+else:
+    print("✅ Все обязательные переменные окружения установлены")
 
-# Списки каналов
-SOURCE_CHANNELS = [ch.strip() for ch in os.environ.get('SOURCE_CHANNELS', '@rian_ru,@tass_agency').split(',') if ch.strip()]
-DISCUSSION_CHANNELS = [ch.strip() for ch in os.environ.get('DISCUSSION_CHANNELS', '@meduzalive').split(',') if ch.strip()]
-TARGET_CHANNEL = os.environ.get('TARGET_CHANNEL', '@your_target_channel')
+# Telegram API настройки
+API_ID = int(os.getenv('API_ID', 0))
+API_HASH = os.getenv('API_HASH', '')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 
-# Настройки базы данных
-DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///bot_database.db')
+# Настройки каналов
+TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', '').strip()
+SOURCE_CHANNELS = [channel.strip() for channel in os.getenv('SOURCE_CHANNELS', '').split(',') if channel.strip()]
+DISCUSSION_CHANNELS = [channel.strip() for channel in os.getenv('DISCUSSION_CHANNELS', '').split(',') if channel.strip()]
 
-# Настройки NLP
-SUMMARY_MODEL = "IlyaGusev/mbart_ru_sum_gazeta"
-COMMENT_MODEL = "cointegrated/rubert-tiny2"
+# Настройки приложения
+PARSE_INTERVAL_DAYS = int(os.getenv('PARSE_INTERVAL_DAYS', 7))
+PUBLISH_TIME = os.getenv('PUBLISH_TIME', '10:00')
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+# База данных
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///bot_database.db')
 
+# Выводим информацию о загруженной конфигурации
 print(f"✅ Конфигурация загружена: {len(SOURCE_CHANNELS)} исходных каналов, {len(DISCUSSION_CHANNELS)} каналов обсуждений")
+print(f"🎯 Целевой канал: {TARGET_CHANNEL}")
