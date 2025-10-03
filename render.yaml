@@ -9,3 +9,9 @@
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: MAX_POSTS_PER_CHANNEL
+        value: 5
+      - key: PARSE_INTERVAL_DAYS
+        value: 1
+      - key: PUBLISH_TIME
+        value: "10:00"

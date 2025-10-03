@@ -57,7 +57,7 @@ class ChannelParser:
     
     def _is_advertisement(self, text):
         """Проверяет, является ли текст рекламой"""
-        ad_keywords = ['реклама', 'sponsored', 'промо', 'покупка', 'купить', 'заказать', 'скидка', 'акция']
+        ad_keywords = ['реклама', 'sponsored', 'промо', 'покупка', 'купить', 'заказать', 'скидка', 'акция', 'promo', 'advertisement']
         text_lower = text.lower()
         return any(keyword in text_lower for keyword in ad_keywords)
     

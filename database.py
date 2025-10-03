@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
-import re
+from config import DATABASE_URL
 
 Base = declarative_base()
 
@@ -18,19 +18,20 @@ class Post(Base):
     processed = Column(Boolean, default=False)
     processed_text = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
+    is_main_post = Column(Boolean, default=False)  # True для основных постов, False для обсуждений
 
-class BotConfig(Base):
-    __tablename__ = 'config'
+class LastProcessed(Base):
+    __tablename__ = 'last_processed'
     
     id = Column(Integer, primary_key=True)
-    key = Column(String(255))
-    value = Column(String(255))
+    channel = Column(String(255), unique=True)
+    last_message_id = Column(Integer, default=0)
+    updated_at = Column(DateTime, default=datetime.now)
 
 def get_database_url():
     """Получает и корректирует URL базы данных"""
-    database_url = os.environ.get('DATABASE_URL', 'sqlite:///bot_database.db')
+    database_url = DATABASE_URL
     
-    # Исправляем для Render PostgreSQL
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
@@ -50,7 +51,6 @@ def init_db():
     except Exception as e:
         print(f"❌ Ошибка при подключении к основной БД: {e}")
         print("🔄 Пробуем использовать SQLite...")
-        # Fallback на SQLite
         engine = create_engine('sqlite:///bot_database.db')
         Base.metadata.create_all(engine)
         return sessionmaker(bind=engine)
