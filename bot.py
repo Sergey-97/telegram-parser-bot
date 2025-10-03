@@ -193,7 +193,8 @@ async def main():
         print("=" * 50)
         
         logger.info("🤖 Бот запускается...")
-        
+        # Запускаем health check сервер
+        start_health_check()
         # Запускаем бота
         await application.run_polling()
         
