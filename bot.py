@@ -1,260 +1,163 @@
-﻿from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-from config import BOT_TOKEN, TARGET_CHANNEL, SOURCE_CHANNELS, DISCUSSION_CHANNELS
-import os
+﻿import asyncio
 import logging
-import threading
-from flask import Flask
+from telethon import TelegramClient, events
+from telethon.errors import SessionPasswordNeededError
+import config
+from database import init_db, save_message, get_last_parsed_date
+from parser import parse_channel_messages
+import schedule
+import time
+from datetime import datetime, timedelta
 
 # Настройка логирования
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Создаем Flask приложение для health check
-app = Flask(__name__)
+# Инициализация клиента Telegram
+client = TelegramClient(
+    'parser_bot_session',
+    config.API_ID,
+    config.API_HASH
+)
 
-@app.route('/')
-def health_check():
-    return {
-        'status': 'healthy',
-        'service': 'Telegram Parser Bot',
-        'message': 'Bot is running successfully!'
-    }
-
-@app.route('/status')
-def status():
-    return {
-        'status': 'running',
-        'bot': 'active'
-    }
-
-@app.route('/ping')
-def ping():
-    return {'ping': 'pong'}
-
-def run_health_check():
-    """Запускает Flask сервер для health check"""
+async def publish_to_channel(message_text, media=None):
+    """Публикует сообщение в целевой канал"""
     try:
-        print("🏥 Запускаем health check сервер на порту 10000...")
-        app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)
+        channel = await client.get_entity(config.TARGET_CHANNEL)
+        if media:
+            await client.send_file(channel, media, caption=message_text)
+        else:
+            await client.send_message(channel, message_text)
+        logger.info(f"✅ Сообщение опубликовано в {config.TARGET_CHANNEL}")
+        return True
     except Exception as e:
-        print(f"❌ Ошибка health check сервера: {e}")
+        logger.error(f"❌ Ошибка публикации: {e}")
+        return False
 
-def start_health_check():
-    """Запускает health check в отдельном потоке"""
+async def parse_and_publish():
+    """Основная функция парсинга и публикации"""
+    logger.info("🔄 Запуск парсинга каналов...")
+    
     try:
-        health_thread = threading.Thread(target=run_health_check)
-        health_thread.daemon = True
-        health_thread.start()
-        print("✅ Health check сервер запущен")
-        return health_thread
+        # Получаем дату последнего парсинга
+        last_parsed = get_last_parsed_date()
+        since_date = datetime.now() - timedelta(days=config.PARSE_INTERVAL_DAYS)
+        
+        if last_parsed and last_parsed > since_date:
+            since_date = last_parsed
+        
+        # Парсим сообщения из исходных каналов
+        all_messages = []
+        for source_channel in config.SOURCE_CHANNELS:
+            try:
+                messages = await parse_channel_messages(client, source_channel, since_date)
+                all_messages.extend(messages)
+                logger.info(f"📥 Получено {len(messages)} сообщений из {source_channel}")
+            except Exception as e:
+                logger.error(f"❌ Ошибка парсинга {source_channel}: {e}")
+        
+        # Фильтруем и публикуем сообщения
+        published_count = 0
+        for message in all_messages:
+            # Здесь можно добавить фильтрацию по ключевым словам
+            if await publish_to_channel(message.text):
+                save_message(
+                    message_id=message.id,
+                    channel=message.channel,
+                    text=message.text,
+                    date=message.date,
+                    published=True
+                )
+                published_count += 1
+                # Задержка между сообщениями чтобы не спамить
+                await asyncio.sleep(2)
+        
+        logger.info(f"🎉 Парсинг завершен. Опубликовано {published_count} сообщений")
+        
     except Exception as e:
-        print(f"⚠️ Не удалось запустить health check: {e}")
-        return None
+        logger.error(f"❌ Критическая ошибка при парсинге: {e}")
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+@client.on(events.NewMessage(pattern='/start'))
+async def start_handler(event):
     """Обработчик команды /start"""
-    user = update.effective_user
-    welcome_text = f"""
-🤖 Привет, {user.first_name}!
+    await event.reply(
+        "🤖 Бот-парсер активен!\n\n"
+        f"**Целевой канал:** {config.TARGET_CHANNEL}\n"
+        f"**Источники:** {', '.join(config.SOURCE_CHANNELS)}\n"
+        f"**Интервал парсинга:** {config.PARSE_INTERVAL_DAYS} дней\n\n"
+        "**Команды:**\n"
+        "/parse - ручной запуск парсинга\n"
+        "/status - статус бота"
+    )
 
-Я - бот для автоматического парсинга и публикации постов из Telegram каналов.
-
-📊 **Логика работы:**
-• Парсим только новые посты (без дублирования)
-• Берем последние 5 постов из основных каналов
-• Анализируем релевантные обсуждения
-• Формируем ежедневный обзор
-
-⚡ **Команды:**
-/start - показать это сообщение
-/test - тестовая команда
-/status - показать статус бота
-/channels - показать список каналов
-/parse - запустить парсинг вручную
-/stats - статистика базы данных
-
-Бот работает на Render.com и доступен 24/7!
-    """
-    await update.message.reply_text(welcome_text)
-
-async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Тестовая команда для проверки работы"""
-    await update.message.reply_text("✅ Бот работает! Команды обрабатываются корректно.")
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает статус бота"""
-    from database import Session, Post
-    session = Session()
-    
-    try:
-        total_posts = session.query(Post).count()
-        main_posts = session.query(Post).filter_by(is_main_post=True).count()
-        discussion_posts = session.query(Post).filter_by(is_main_post=False).count()
-        processed_posts = session.query(Post).filter_by(processed=True).count()
-        
-        status_text = f"""
-📊 **Статус бота:**
-
-• 📡 Исходных каналов: {len(SOURCE_CHANNELS)}
-• 💬 Каналов обсуждений: {len(DISCUSSION_CHANNELS)}
-• 🎯 Целевой канал: {TARGET_CHANNEL}
-
-📈 **Статистика базы:**
-• Всего постов: {total_posts}
-• Основных постов: {main_posts}
-• Обсуждений: {discussion_posts}
-• Обработано: {processed_posts}
-
-• 🌐 Окружение: {'🚀 Production' if os.environ.get('RENDER', False) else '🔧 Development'}
-• 🤖 Статус: 🟢 Активен
-• 🏥 Health check: 🟢 Работает
-
-Бот успешно запущен и готов к работе!
-    """
-        await update.message.reply_text(status_text)
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка при получении статуса: {e}")
-    finally:
-        session.close()
-
-async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает список отслеживаемых каналов"""
-    channels_text = "📡 **Отслеживаемые каналы:**\n\n"
-    
-    channels_text += "**🎯 Основные каналы (источники):**\n"
-    for i, channel in enumerate(SOURCE_CHANNELS, 1):
-        channels_text += f"{i}. {channel}\n"
-        
-    channels_text += "\n**💬 Каналы обсуждений (анализ):**\n"
-    for i, channel in enumerate(DISCUSSION_CHANNELS, 1):
-        channels_text += f"{i}. {channel}\n"
-        
-    channels_text += f"\n**🎯 Целевой канал:** {TARGET_CHANNEL}"
-    channels_text += f"\n\n**⚙️ Настройки:**"
-    channels_text += f"\n• Макс. постов на канал: {os.environ.get('MAX_POSTS_PER_CHANNEL', '5')}"
-    channels_text += f"\n• Интервал парсинга: {os.environ.get('PARSE_INTERVAL_DAYS', '1')} день"
-    
-    await update.message.reply_text(channels_text)
-
-async def parse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+@client.on(events.NewMessage(pattern='/parse'))
+async def parse_handler(event):
     """Ручной запуск парсинга"""
-    await update.message.reply_text("🔄 Запускаю парсинг каналов...")
+    await event.reply("🔄 Запускаю парсинг...")
+    await parse_and_publish()
+    await event.reply("✅ Парсинг завершен")
+
+@client.on(events.NewMessage(pattern='/status'))
+async def status_handler(event):
+    """Показывает статус бота"""
+    status_info = (
+        f"🤖 **Статус бота:** Активен\n"
+        f"👤 **Пользователь:** {(await client.get_me()).first_name}\n"
+        f"🎯 **Целевой канал:** {config.TARGET_CHANNEL}\n"
+        f"📡 **Источники:** {len(config.SOURCE_CHANNELS)}\n"
+        f"⏰ **Интервал:** {config.PARSE_INTERVAL_DAYS} дней\n"
+        f"🕒 **Время публикации:** {config.PUBLISH_TIME}"
+    )
+    await event.reply(status_info)
+
+def run_scheduler():
+    """Запускает планировщик для автоматического парсинга"""
+    schedule.every().day.at(config.PUBLISH_TIME).do(
+        lambda: asyncio.create_task(parse_and_publish())
+    )
     
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+async def main():
+    """Основная функция бота"""
     try:
-        from parser import parse_channels_sync
-        result = parse_channels_sync()
-        await update.message.reply_text(f"✅ Парсинг завершен! Найдено {len(result)} новых постов")
-    except Exception as e:
-        logger.error(f"Ошибка при парсинге: {e}")
-        await update.message.reply_text(f"❌ Ошибка при парсинге: {e}")
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает детальную статистику"""
-    from database import Session, Post
-    from datetime import datetime, timedelta
-    
-    session = Session()
-    
-    try:
-        # Базовая статистика
-        total_posts = session.query(Post).count()
-        main_posts = session.query(Post).filter_by(is_main_post=True).count()
-        discussion_posts = session.query(Post).filter_by(is_main_post=False).count()
-        processed_posts = session.query(Post).filter_by(processed=True).count()
-        unprocessed_posts = session.query(Post).filter_by(processed=False).count()
+        # Инициализация базы данных
+        init_db()
         
-        # Посты за последние 24 часа
-        yesterday = datetime.now() - timedelta(days=1)
-        recent_posts = session.query(Post).filter(Post.created_at >= yesterday).count()
+        # Запуск клиента
+        await client.start(bot_token=config.BOT_TOKEN)
         
-        stats_text = f"""
-📈 **Детальная статистика:**
-
-**📊 Общая статистика:**
-• Всего постов: {total_posts}
-• Основных постов: {main_posts}
-• Обсуждений: {discussion_posts}
-• Обработано: {processed_posts}
-• Необработано: {unprocessed_posts}
-
-**🕐 Активность:**
-• Постов за 24ч: {recent_posts}
-
-**🎯 Каналы:**
-• Основных: {len(SOURCE_CHANNELS)}
-• Обсуждений: {len(DISCUSSION_CHANNELS)}
-
-**⚙️ Настройки:**
-• Макс. постов: {os.environ.get('MAX_POSTS_PER_CHANNEL', '5')}
-• Интервал: {os.environ.get('PARSE_INTERVAL_DAYS', '1')} день
-• Время публикации: {os.environ.get('PUBLISH_TIME', '10:00')}
-"""
-        await update.message.reply_text(stats_text)
+        me = await client.get_me()
+        logger.info(f"✅ Бот запущен: {me.first_name} (@{me.username})")
+        logger.info(f"🎯 Целевой канал: {config.TARGET_CHANNEL}")
+        logger.info(f"📡 Источники: {config.SOURCE_CHANNELS}")
         
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
-    finally:
-        session.close()
-
-def main():
-    """Основная функция запуска"""
-    print("🚀 Инициализация Telegram бота...")
-    
-    # Проверяем обязательные переменные окружения
-    required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN']
-    missing_vars = [var for var in required_vars if not os.environ.get(var)]
-    
-    if missing_vars:
-        error_msg = f"❌ Отсутствуют обязательные переменные окружения: {missing_vars}"
-        print(error_msg)
-        print("Пожалуйста, установите их в настройках Render.com")
-        return
-    
-    try:
-        # Запускаем health check сервер
-        health_thread = start_health_check()
+        # Тестовая публикация при запуске
+        await publish_to_channel("🚀 Бот-парсер запущен и готов к работе!")
         
-        # Создаем приложение бота
-        application = Application.builder().token(BOT_TOKEN).build()
+        # Запуск планировщика в отдельном потоке
+        import threading
+        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+        scheduler_thread.start()
         
-        # Добавляем обработчики команд
-        application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("test", test_command))
-        application.add_handler(CommandHandler("status", status_command))
-        application.add_handler(CommandHandler("channels", channels_command))
-        application.add_handler(CommandHandler("parse", parse_command))
-        application.add_handler(CommandHandler("stats", stats_command))
+        logger.info("🤖 Бот работает. Нажмите Ctrl+C для остановки.")
         
-        print("=" * 50)
-        print("🤖 Telegram Parser Bot запускается...")
-        print(f"🎯 Целевой канал: {TARGET_CHANNEL}")
-        print(f"📡 Основных каналов: {len(SOURCE_CHANNELS)}")
-        print(f"💬 Каналов обсуждений: {len(DISCUSSION_CHANNELS)}")
-        print(f"⚙️ Макс. постов на канал: {os.environ.get('MAX_POSTS_PER_CHANNEL', '5')}")
-        print("=" * 50)
-        
-        logger.info("🤖 Бот запускается...")
-        
-        # Запускаем планировщик
-        try:
-            from scheduler import run_scheduler_in_thread
-            scheduler = run_scheduler_in_thread()
-            print("✅ Планировщик запущен")
-        except Exception as e:
-            print(f"⚠️ Планировщик не запущен: {e}")
-        
-        # Запускаем бота (блокирующий вызов)
-        print("🔄 Запускаем polling...")
-        application.run_polling()
+        # Ожидание сообщений
+        await client.run_until_disconnected()
         
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка запуска бота: {e}")
-        print(f"❌ Критическая ошибка запуска бота: {e}")
+        logger.error(f"❌ Критическая ошибка при запуске бота: {e}")
+        raise
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("❌ Бот остановлен пользователем")
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
