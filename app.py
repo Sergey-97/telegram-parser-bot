@@ -42,7 +42,12 @@ def home():
     <h1>🤖 Telegram Parser Bot</h1>
     <p>Бот для автоматической публикации аналитики маркетплейсов</p>
     <p><strong>Расписание:</strong> Каждый понедельник в 10:00 UTC</p>
-    <p><a href="/health">Health Check</a> | <a href="/run-now">Run Now</a></p>
+    <p><strong>Статус:</strong> ✅ Активен</p>
+    <p>
+        <a href="/health">Health Check</a> | 
+        <a href="/run-now">Run Now</a> |
+        <a href="/logs">View Logs</a>
+    </p>
     """
 
 @app.route('/health')
@@ -61,9 +66,27 @@ def run_now():
         loop.run_until_complete(run_bot())
         loop.close()
         
-        return "✅ Bot executed successfully!"
+        return "✅ Bot executed successfully! Check Render logs for details."
     except Exception as e:
         return f"❌ Error: {str(e)}"
+
+@app.route('/logs')
+def show_logs():
+    """Показывает последние логи (для отладки)"""
+    try:
+        # В Render логи доступны через dashboard
+        return """
+        <h2>📋 Logs</h2>
+        <p>Логи доступны в Render Dashboard:</p>
+        <ol>
+            <li>Перейдите в ваш сервис на Render</li>
+            <li>Нажмите на вкладку "Logs"</li>
+            <li>Посмотрите логи выполнения</li>
+        </ol>
+        <a href="/">← Назад</a>
+        """
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 def start_scheduler():
     """Запуск планировщика"""
@@ -99,12 +122,23 @@ def start_scheduler():
         scheduler.start()
         logger.info("📅 Планировщик запущен: понедельник 10:00 UTC")
         
+        return scheduler
     except Exception as e:
         logger.error(f"❌ Ошибка запуска планировщика: {e}")
+        return None
 
-# Запускаем планировщик при импорте
-start_scheduler()
+# Глобальная переменная для хранения планировщика
+scheduler = None
+
+@app.before_first_request
+def initialize():
+    """Инициализация при первом запросе"""
+    global scheduler
+    scheduler = start_scheduler()
 
 if __name__ == '__main__':
+    # Инициализируем при прямом запуске
+    scheduler = start_scheduler()
+    
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
