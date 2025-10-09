@@ -31,8 +31,3 @@ SOURCE_CHANNELS = [
 # Настройки парсинга
 MAIN_CHANNELS_LIMIT = 20
 DISCUSSION_CHANNELS_LIMIT = 10
-
-# Настройки расписания (каждый понедельник в 10:00 UTC)
-SCHEDULE_HOUR = 10
-SCHEDULE_MINUTE = 0
-SCHEDULE_DAY_OF_WEEK = 'mon'  # mon, tue, wed, thu, fri, sat, sun

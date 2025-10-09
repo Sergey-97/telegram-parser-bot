@@ -13,7 +13,12 @@ async def run_bot():
     """Основная функция запуска бота"""
     logger.info("🚀 Запуск Telegram парсера...")
     
-    client = Client("telegram_parser", api_id=API_ID, api_hash=API_HASH)
+    client = Client(
+        "telegram_parser", 
+        api_id=API_ID, 
+        api_hash=API_HASH,
+        workdir="./"
+    )
     
     try:
         await client.start()
