@@ -7,3 +7,8 @@ aiohttp==3.9.5
 flask==3.0.3
 python-dotenv==1.0.1
 httpx==0.25.2
+pyrogram==2.0.106
+apscheduler==3.10.4
+flask==2.3.3
+gunicorn==21.2.0
+tgcrypto==1.2.6

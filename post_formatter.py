@@ -1,87 +1,142 @@
-# post_formatter.py
-import logging
-from typing import List, Dict
-import config
-
-logger = logging.getLogger(__name__)
+import json
+from datetime import datetime
+from config import SOURCE_CHANNELS
 
 class PostFormatter:
     def __init__(self):
-        self.emoji_map = {
-            'позитивный': '😊',
-            'нейтральный': '😐', 
-            'негативный': '😟'
-        }
-        self.marketplace_emojis = {
-            'OZON': '🟠',
-            'WB': '🔵'
-        }
+        self.current_date = datetime.now().strftime("%d.%m.%Y")
     
-    def format_marketplace_post(self, marketplace: str, content: Dict, source_channels: List[str]) -> str:
-        """Форматирует пост для конкретного маркетплейса"""
-        if not content['has_ai_analysis']:
-            return ""
+    def format_structured_post(self, structured_content):
+        """Форматирует структурированный контент в готовый пост"""
+        try:
+            # Проверяем тип structured_content
+            if isinstance(structured_content, str):
+                # Если это строка, пытаемся распарсить JSON
+                try:
+                    structured_content = json.loads(structured_content)
+                except json.JSONDecodeError:
+                    # Если не JSON, используем как есть
+                    return self._create_simple_post(structured_content)
+            
+            # Если это словарь (ожидаемая структура)
+            if isinstance(structured_content, dict):
+                return self._format_from_dict(structured_content)
+            else:
+                return self._create_simple_post(str(structured_content))
+                
+        except Exception as e:
+            print(f"❌ Ошибка форматирования поста: {e}")
+            return self._create_fallback_post()
+
+    def _format_from_dict(self, data):
+        """Форматирует пост из словаря структурированных данных"""
+        lines = []
         
-        post_parts = []
-        emoji = self.marketplace_emojis.get(marketplace, '⚪')
+        # Заголовок
+        title = data.get('title', f'📊 Аналитика маркетплейсов {self.current_date}')
+        lines.append(f"**{title}**")
+        lines.append("")
         
-        # Заголовок маркетплейса
-        post_parts.append(f"{emoji} **{marketplace}**")
+        # Резюме
+        summary = data.get('summary', 'Ежедневный обзор ключевых изменений на маркетплейсах')
+        lines.append(summary)
+        lines.append("")
         
-        # Основной контент
-        if content['main_content']:
-            post_parts.append("\n📋 **ОСНОВНОЕ:**")
-            for i, item in enumerate(content['main_content'][:2], 1):
-                post_parts.append(f"{i}. {item}")
+        # Секции по маркетплейсам
+        sections = data.get('sections', {})
         
-        # Комментарии
-        if content['discussion_insights']:
-            post_parts.append("\n💭 **МНЕНИЯ:**")
-            for insight in content['discussion_insights']:
-                sentiment_emoji = self.emoji_map.get(insight['sentiment'], '😐')
-                post_parts.append(f"• {sentiment_emoji} {insight['text']}")
+        for marketplace, content in sections.items():
+            if marketplace == 'OTHER':
+                continue
+                
+            lines.append(f"**{self._get_marketplace_emoji(marketplace)} {marketplace}**")
+            
+            # Ключевые моменты
+            key_points = content.get('key_points', [])
+            if key_points:
+                if isinstance(key_points, list):
+                    for point in key_points[:3]:  # Ограничиваем количество пунктов
+                        lines.append(f"• {point}")
+                else:
+                    lines.append(f"• {key_points}")
+            
+            # Важные изменения
+            important = content.get('important', [])
+            if important:
+                lines.append("")
+                lines.append("💡 **Важно:**")
+                if isinstance(important, list):
+                    for item in important[:2]:
+                        lines.append(f"▪️ {item}")
+                else:
+                    lines.append(f"▪️ {important}")
+            
+            # Советы
+            tips = content.get('tips', [])
+            if tips:
+                lines.append("")
+                lines.append("👥 **Советы:**")
+                if isinstance(tips, list):
+                    for tip in tips[:2]:
+                        lines.append(f"▫️ {tip}")
+                else:
+                    lines.append(f"▫️ {tips}")
+            
+            lines.append("")
         
-        return '\n'.join(post_parts)
-    
-    def format_structured_post(self, structured_content: Dict, source_channels: List[str]) -> str:
-        """Форматирует общий пост с разделением по маркетплейсам"""
-        
-        post_parts = ["🚀 **СВЕЖИЕ НОВОСТИ МАРКЕТПЛЕЙСОВ**\n"]
-        
-        # Добавляем посты для каждого маркетплейса
-        for marketplace in ['OZON', 'WB']:
-            if marketplace in structured_content and structured_content[marketplace]['has_ai_analysis']:
-                marketplace_post = self.format_marketplace_post(marketplace, structured_content[marketplace], source_channels)
-                if marketplace_post:
-                    post_parts.append(marketplace_post)
-                    post_parts.append("")  # Пустая строка между маркетплейсами
-        
-        # Убираем последнюю пустую строку
-        if post_parts and post_parts[-1] == "":
-            post_parts.pop()
+        # Общие рекомендации
+        recommendations = data.get('recommendations', '')
+        if recommendations:
+            lines.append("🎯 **Рекомендации:**")
+            lines.append(recommendations)
+            lines.append("")
         
         # Источники
-        if source_channels:
-            source_names = [ch.replace('@', '').replace('https://t.me/', '') for ch in source_channels[:3]]
-            post_parts.append(f"\n📡 **Источники:** {', '.join(source_names)}")
+        lines.append("📚 **Источники:**")
+        sources_text = ", ".join([f"#{channel.replace('https://t.me/', '').replace('@', '')}" 
+                                for channel in SOURCE_CHANNELS[:3]])
+        lines.append(sources_text)
+        lines.append("")
         
-        # Статистика
-        total_messages = sum(content.get('message_count', 0) for content in structured_content.values())
-        if total_messages > 0:
-            post_parts.append(f"📊 **Обработано сообщений:** {total_messages}")
+        # Хештеги
+        lines.append("#аналитика #маркетплейсы #OZON #WB #новости")
         
-        return '\n'.join(post_parts)
-    
-    def format_simple_post(self, main_content: List[str], source_channels: List[str]) -> str:
-        """Простой формат поста (резервный)"""
-        post_parts = ["📢 **СВЕЖИЕ НОВОСТИ**\n"]
-        
-        for i, content in enumerate(main_content[:3], 1):
-            clean_content = content[:200] + '...' if len(content) > 200 else content
-            post_parts.append(f"{i}. {clean_content}")
-        
-        if source_channels:
-            source_names = [ch.replace('@', '').replace('https://t.me/', '') for ch in source_channels[:2]]
-            post_parts.append(f"\n📡 **Источники:** {', '.join(source_names)}")
-        
-        return '\n'.join(post_parts)
+        return "\n".join(lines)
+
+    def _get_marketplace_emoji(self, marketplace):
+        """Возвращает эмодзи для маркетплейса"""
+        emoji_map = {
+            'OZON': '🟠',
+            'WB': '🔵', 
+            'YANDEX': '🟡',
+            'OTHER': '⚪'
+        }
+        return emoji_map.get(marketplace, '🔹')
+
+    def _create_simple_post(self, content):
+        """Создает простой пост из строки"""
+        return f"""📊 Аналитика маркетплейсов {self.current_date}
+
+{content}
+
+📚 Источники: {", ".join(SOURCE_CHANNELS[:3])}
+
+#аналитика #маркетплейсы #OZON #WB"""
+
+    def _create_fallback_post(self):
+        """Создает резервный пост"""
+        return f"""📊 Аналитика маркетплейсов {self.current_date}
+
+🟠 **OZON**
+• Обновления платформы для продавцов
+• Оптимизация процессов модерации
+
+🔵 **WB** 
+• Изменения в логистических тарифах
+• Новые требования к карточкам товаров
+
+🎯 **Рекомендации:** Следите за официальными объявлениями маркетплейсов и участвуйте в профессиональных сообществах.
+
+📚 **Источники:** {", ".join(SOURCE_CHANNELS[:3])}
+
+#аналитика #маркетплейсы #OZON #WB #новости"""

@@ -1,50 +1,38 @@
-# config.py
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Telegram API
-API_ID = int(os.getenv('API_ID', 0))
-API_HASH = os.getenv('API_HASH', '')
-BOT_TOKEN = os.getenv('BOT_TOKEN', '')
-
-# Hugging Face
+# API ключи
 HUGGINGFACE_TOKEN = os.getenv('HUGGINGFACE_TOKEN', '')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 
-# Каналы
+# Настройки Telegram API
+API_ID = int(os.getenv('API_ID'))
+API_HASH = os.getenv('API_HASH')
+
+# Целевой канал для публикации
 TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', '@mar_factor')
-SOURCE_CHANNELS = [ch.strip() for ch in os.getenv('SOURCE_CHANNELS', '').split(',') if ch.strip()]
-DISCUSSION_CHANNELS = [ch.strip() for ch in os.getenv('DISCUSSION_CHANNELS', '').split(',') if ch.strip()]
+
+# Каналы для парсинга
+SOURCE_CHANNELS = [
+    "https://t.me/ozonmarketplace",
+    "https://t.me/wbsellerofficial", 
+    "https://t.me/ozon_adv",
+    "https://t.me/sklad1313",
+    "https://t.me/sellmonitor_com",
+    "https://t.me/redmilliard",
+    "https://t.me/marketplace_hogwarts",
+    "https://t.me/mpgo_ru",
+    "https://t.me/ProdaemWB",
+    "https://t.me/ProdaemOZON"
+]
 
 # Настройки парсинга
-SOURCE_LIMIT = int(os.getenv('SOURCE_LIMIT', 15))  # Количество постов из основных каналов
-DISCUSSION_LIMIT = int(os.getenv('DISCUSSION_LIMIT', 10))  # Количество постов из доп каналов
-PARSE_INTERVAL_DAYS = int(os.getenv('PARSE_INTERVAL_DAYS', 1))
+MAIN_CHANNELS_LIMIT = 20
+DISCUSSION_CHANNELS_LIMIT = 10
 
-# Настройки приложения
-PUBLISH_TIME = os.getenv('PUBLISH_TIME', '10:00')
-DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///bot_database.db')
-
-# Ключевые слова для определения маркетплейсов
-MARKETPLACE_KEYWORDS = {
-    'OZON': ['ozon', 'озон', 'озона', 'озоне'],
-    'WB': ['wildberries', 'вб', 'wb', 'вайлдберриз', 'wildberry']
-}
-
-def validate_config():
-    required = ['API_ID', 'API_HASH', 'BOT_TOKEN']
-    missing = [var for var in required if not os.getenv(var)]
-    
-    if missing:
-        print(f"❌ Отсутствуют: {', '.join(missing)}")
-        return False
-    
-    print(f"✅ Конфигурация загружена")
-    print(f"   Основные каналы: {len(SOURCE_CHANNELS)} (лимит: {SOURCE_LIMIT})")
-    print(f"   Доп. каналы: {len(DISCUSSION_CHANNELS)} (лимит: {DISCUSSION_LIMIT})")
-    return True
-
-if __name__ == "__main__":
-    validate_config()
+# Настройки расписания (каждый понедельник в 10:00 UTC)
+SCHEDULE_HOUR = 10
+SCHEDULE_MINUTE = 0
+SCHEDULE_DAY_OF_WEEK = 'mon'  # mon, tue, wed, thu, fri, sat, sun

@@ -1,148 +1,158 @@
-﻿# bot.py
-import asyncio
-import requests
+﻿import asyncio
 import os
-from dotenv import load_dotenv
-from parser import Parser
+import sys
+from datetime import datetime
+from pyrogram import Client
+from database import init_db, get_last_messages, save_post
+from parser import TelegramParser
 from ai_processor import AIProcessor
 from post_formatter import PostFormatter
-import config
+from config import API_ID, API_HASH
 
-load_dotenv()
-
-class Bot:
-    def __init__(self):
-        self.token = os.getenv('BOT_TOKEN')
-        self.target_channel = os.getenv('TARGET_CHANNEL', '@mar_factor')
-        self.parser = Parser()
-        self.ai_processor = AIProcessor()
-        self.post_formatter = PostFormatter()
+async def main():
+    """Основная асинхронная функция"""
+    print("=" * 60)
+    print("🚀 TELEGRAM AI ПАРСЕР БОТ - РЕАЛЬНЫЙ ПАРСИНГ")
+    print("=" * 60)
     
-    def test_bot_access(self):
-        """Проверяет доступ бота к целевому каналу"""
-        url = f"https://api.telegram.org/bot{self.token}/getChat"
-        response = requests.post(url, json={'chat_id': self.target_channel}, timeout=10)
-        
-        if response.status_code == 200:
-            chat_info = response.json()['result']
-            print(f"✅ Целевой канал: {chat_info.get('title', 'N/A')}")
-            return True
-        print(f"❌ Ошибка доступа: {response.status_code}")
-        return False
+    # Инициализируем компоненты
+    client = Client("telegram_parser", api_id=API_ID, api_hash=API_HASH)
+    parser = TelegramParser(client)
+    ai_processor = AIProcessor()
+    post_formatter = PostFormatter()
     
-    def publish_post(self, text: str):
-        """Публикует пост в канал"""
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        payload = {
-            'chat_id': self.target_channel,
-            'text': text,
-        }
+    try:
+        # Запускаем клиента
+        await client.start()
+        print("✅ Успешная аутентификация")
         
-        try:
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code == 200:
-                return True
-            else:
-                print(f"❌ Ошибка API: {response.status_code} - {response.text}")
-                return False
-        except Exception as e:
-            print(f"❌ Ошибка отправки: {e}")
-            return False
-    
-    def create_fallback_post(self):
-        """Создает резервный пост если парсинг не удался"""
-        print("🔄 Создаю резервный пост...")
-        
-        fallback_news = [
-            "Ozon запускает осеннюю программу лояльности для продавцов с повышенными бонусами за объем продаж и качество обслуживания.",
-            "Сезонные скидки до 50% на электронику и бытовую технику. В акции участвуют смартфоны, ноутбуки, планшеты и умные устройства.",
-            "Wildberries расширяет логистическую сеть: добавлены новые пункты выдачи в Москве, Санкт-Петербурге и других крупных городах."
-        ]
-        
-        fallback_comments = [
-            "Отличные новости от Ozon! Новые условия программы лояльности очень мотивируют развивать бизнес на маркетплейсе.",
-            "Скидки на технику просто супер! Уже присмотрел новый MacBook по выгодной цене. Отличное время для покупок!",
-            "Удобно, что Wildberries расширяет сеть пунктов выдачи. Теперь получать заказы стало еще проще и ближе к дому."
-        ]
-        
-        structured_content = self.ai_processor.structure_content(fallback_news, fallback_comments)
-        post = self.post_formatter.format_structured_post(structured_content, config.SOURCE_CHANNELS)
-        
-        return post
-    
-    async def create_post_with_real_parsing(self):
-        """Создает пост на основе реального парсинга"""
+        # Запускаем парсинг
         print("🔍 Запускаю реальный парсинг каналов...")
+        parsing_results = await parser.parse_all_channels()
         
-        # Парсим каналы
-        parsed_data = await self.parser.parse_all_channels()
-        source_texts = [msg['text'] for msg in parsed_data['sources']]
-        discussion_texts = [msg['text'] for msg in parsed_data['discussions']]
+        # Создаем пост на основе результатов
+        if parsing_results['total_new_messages'] >= 3:
+            print("🧠 Обрабатываю реальный контент...")
+            post = await create_post_with_real_parsing(parsing_results, ai_processor, post_formatter)
+        else:
+            print("⚠️  Мало данных от парсинга, использую резервный контент")
+            post = await create_fallback_post(ai_processor, post_formatter)
         
-        print(f"\n📥 РЕЗУЛЬТАТЫ ПАРСИНГА:")
+        # Сохраняем пост в базу
+        save_post(post)
+        
+        # Отправляем пост
+        await send_post(client, post)
+        
+    except Exception as e:
+        print(f"❌ Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        
+    finally:
+        # Безопасная остановка
+        await safe_stop_client(client)
+
+async def safe_stop_client(client):
+    """Безопасная остановка клиента"""
+    try:
+        if client.is_connected:
+            await client.stop()
+            print("✅ Pyrogram клиент остановлен")
+    except Exception as e:
+        print(f"⚠️  Ошибка при остановке клиента: {e}")
+
+async def create_post_with_real_parsing(parsing_results, ai_processor, post_formatter):
+    """Создает пост на основе реальных данных парсинга"""
+    try:
+        # Получаем тексты сообщений для AI обработки
+        source_texts = []
+        discussion_texts = []
+        
+        for result in parsing_results['results']:
+            if result['new_messages'] > 0:
+                messages = result.get('messages', [])
+                for msg in messages:
+                    if result['type'] == 'main':
+                        source_texts.append(msg)
+                    else:
+                        discussion_texts.append(msg)
+        
+        print(f"📥 РЕЗУЛЬТАТЫ ПАРСИНГА:")
         print(f"   Основные каналы: {len(source_texts)} сообщений")
         print(f"   Обсуждения: {len(discussion_texts)} сообщений")
         
-        # Если парсинг не удался, используем резервный контент
-        if len(source_texts) < 2:
-            print("⚠️  Мало данных от парсинга, использую резервный контент")
-            return self.create_fallback_post()
+        # Структурируем контент через AI
+        structured_content = ai_processor.structure_content(source_texts, discussion_texts)
         
-        print("🧠 Обрабатываю реальный контент...")
-        structured_content = self.ai_processor.structure_content(source_texts, discussion_texts)
+        # Форматируем пост
+        post_content = post_formatter.format_structured_post(structured_content)
         
-        # Добавляем метку что это реальные данные
-        if len(source_texts) > 0:
-            structured_content['main_topic'] = f"РЕАЛЬНЫЕ ДАННЫЕ | {structured_content['main_topic']}"
+        return post_content
         
-        post = self.post_formatter.format_structured_post(
-            structured_content, 
-            config.SOURCE_CHANNELS + config.DISCUSSION_CHANNELS
-        )
-        
-        return post
+    except Exception as e:
+        print(f"❌ Ошибка создания поста: {e}")
+        return await create_fallback_post(ai_processor, post_formatter)
+
+async def create_fallback_post(ai_processor, post_formatter):
+    """Создает резервный пост при недостатке данных"""
+    print("🔄 Создаю резервный пост...")
     
-    async def run(self):
-        """Основной запуск бота"""
-        print("=" * 60)
-        print("🚀 TELEGRAM AI ПАРСЕР БОТ - РЕАЛЬНЫЙ ПАРСИНГ")
-        print("=" * 60)
+    # Используем последние сообщения из базы данных
+    recent_messages = get_last_messages(limit=10)
+    
+    if recent_messages:
+        texts = [msg['text'] for msg in recent_messages if msg['text']]
+        structured_content = ai_processor.structure_content(texts, [])
+    else:
+        # Полностью резервный контент
+        structured_content = {
+            'title': '📊 Аналитика маркетплейсов',
+            'summary': 'Ежедневный обзор ключевых трендов и изменений',
+            'sections': {
+                'OZON': {
+                    'key_points': [
+                        'Обновления платформы для продавцов',
+                        'Изменения в логистических процессах'
+                    ],
+                    'important': ['Рекомендуется проверить настройки личного кабинета'],
+                    'tips': ['Используйте все доступные инструменты аналитики']
+                },
+                'WB': {
+                    'key_points': [
+                        'Оптимизация процессов выкупа',
+                        'Обновления в работе с возвратами'
+                    ],
+                    'important': ['Внимание к изменениям в регламентах'],
+                    'tips': ['Регулярно мониторьте статистику продаж']
+                }
+            },
+            'recommendations': 'Следите за официальными объявлениями маркетплейсов'
+        }
+    
+    post_content = post_formatter.format_structured_post(structured_content)
+    return post_content
+
+async def send_post(client, post_content):
+    """Отправляет пост в сохраненные сообщения"""
+    try:
+        # Разбиваем длинные посты на части
+        max_length = 4096
+        if len(post_content) > max_length:
+            post_content = post_content[:max_length-100] + "\n\n... (пост сокращен)"
         
-        # Проверка доступа бота
-        if not self.test_bot_access():
-            print("❌ Не могу продолжить без доступа к целевому каналу")
-            return
+        await client.send_message("me", post_content)
+        print("✅ Пост успешно отправлен в 'Сохраненные сообщения'!")
+        print("=" * 40)
+        print("📝 СОДЕРЖАНИЕ ПОСТА:")
+        print("=" * 40)
+        print(post_content)
+        print("=" * 40)
         
-        # Создаем пост
-        post = await self.create_post_with_real_parsing()
-        
-        if not post:
-            print("❌ Не удалось создать пост")
-            return
-        
-        # Показываем пост
-        print("\n📝 СОЗДАННЫЙ ПОСТ:")
-        print("=" * 60)
-        print(post)
-        print("=" * 60)
-        
-        # Подтверждение публикации
-        choice = input("\n📤 Опубликовать этот пост? (y/n): ").strip().lower()
-        if choice == 'y':
-            print("⏳ Публикую...")
-            if self.publish_post(post):
-                print("\n🎉 ПОСТ УСПЕШНО ОПУБЛИКОВАН!")
-                print(f"👀 Посмотреть: https://t.me/mar_factor")
-                
-                print("\n📊 СТАТИСТИКА:")
-                print(f"   📏 Длина поста: {len(post)} символов")
-                print(f"   📄 Строк: {post.count(chr(10)) + 1}")
-                print(f"   🔍 Каналов отслеживается: {len(config.SOURCE_CHANNELS + config.DISCUSSION_CHANNELS)}")
-            else:
-                print("❌ Ошибка публикации поста")
-        else:
-            print("❌ Публикация отменена")
+    except Exception as e:
+        print(f"❌ Ошибка отправки поста: {e}")
 
 if __name__ == "__main__":
-    bot = Bot()
-    asyncio.run(bot.run())
+    # Запускаем бота
+    asyncio.run(main())
+    print("✅ Работа завершена")

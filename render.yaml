@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: telegram-parser-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: API_ID
+        fromSecret: api_id
+      - key: API_HASH
+        fromSecret: api_hash
+      - key: TARGET_CHANNEL
+        value: "@mar_factor"
+      - key: HUGGINGFACE_TOKEN
+        fromSecret: huggingface_token
+      - key: DEBUG_SCHEDULE
+        value: "false"
