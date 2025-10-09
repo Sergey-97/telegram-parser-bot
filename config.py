@@ -1,36 +1,50 @@
+# config.py
 import os
 from dotenv import load_dotenv
 
-# Загружаем переменные из .env файла
 load_dotenv()
 
-# Проверяем обязательные переменные
-required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN']
-missing_vars = [var for var in required_vars if not os.getenv(var)]
-
-if missing_vars:
-    print(f"❌ ВНИМАНИЕ: Не установлены обязательные переменные окружения: {', '.join(missing_vars)}")
-else:
-    print("✅ Все обязательные переменные окружения установлены")
-
-# Telegram API настройки
+# Telegram API
 API_ID = int(os.getenv('API_ID', 0))
 API_HASH = os.getenv('API_HASH', '')
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 
-# Настройки каналов
-TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', '').strip()
-SOURCE_CHANNELS = [channel.strip() for channel in os.getenv('SOURCE_CHANNELS', '').split(',') if channel.strip()]
-DISCUSSION_CHANNELS = [channel.strip() for channel in os.getenv('DISCUSSION_CHANNELS', '').split(',') if channel.strip()]
+# Hugging Face
+HUGGINGFACE_TOKEN = os.getenv('HUGGINGFACE_TOKEN', '')
+
+# Каналы
+TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', '@mar_factor')
+SOURCE_CHANNELS = [ch.strip() for ch in os.getenv('SOURCE_CHANNELS', '').split(',') if ch.strip()]
+DISCUSSION_CHANNELS = [ch.strip() for ch in os.getenv('DISCUSSION_CHANNELS', '').split(',') if ch.strip()]
+
+# Настройки парсинга
+SOURCE_LIMIT = int(os.getenv('SOURCE_LIMIT', 15))  # Количество постов из основных каналов
+DISCUSSION_LIMIT = int(os.getenv('DISCUSSION_LIMIT', 10))  # Количество постов из доп каналов
+PARSE_INTERVAL_DAYS = int(os.getenv('PARSE_INTERVAL_DAYS', 1))
 
 # Настройки приложения
-PARSE_INTERVAL_DAYS = int(os.getenv('PARSE_INTERVAL_DAYS', 7))
 PUBLISH_TIME = os.getenv('PUBLISH_TIME', '10:00')
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
-
-# База данных
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///bot_database.db')
 
-# Выводим информацию о загруженной конфигурации
-print(f"✅ Конфигурация загружена: {len(SOURCE_CHANNELS)} исходных каналов, {len(DISCUSSION_CHANNELS)} каналов обсуждений")
-print(f"🎯 Целевой канал: {TARGET_CHANNEL}")
+# Ключевые слова для определения маркетплейсов
+MARKETPLACE_KEYWORDS = {
+    'OZON': ['ozon', 'озон', 'озона', 'озоне'],
+    'WB': ['wildberries', 'вб', 'wb', 'вайлдберриз', 'wildberry']
+}
+
+def validate_config():
+    required = ['API_ID', 'API_HASH', 'BOT_TOKEN']
+    missing = [var for var in required if not os.getenv(var)]
+    
+    if missing:
+        print(f"❌ Отсутствуют: {', '.join(missing)}")
+        return False
+    
+    print(f"✅ Конфигурация загружена")
+    print(f"   Основные каналы: {len(SOURCE_CHANNELS)} (лимит: {SOURCE_LIMIT})")
+    print(f"   Доп. каналы: {len(DISCUSSION_CHANNELS)} (лимит: {DISCUSSION_LIMIT})")
+    return True
+
+if __name__ == "__main__":
+    validate_config()
