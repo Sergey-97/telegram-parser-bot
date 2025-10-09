@@ -5,7 +5,7 @@ from database import get_last_messages, save_post
 from parser import TelegramParser
 from ai_processor import AIProcessor
 from post_formatter import PostFormatter
-from config import API_ID, API_HASH, TARGET_CHANNEL
+from config import API_ID, API_HASH, TARGET_CHANNEL, BOT_TOKEN
 
 logger = logging.getLogger(__name__)
 
@@ -13,16 +13,23 @@ async def run_bot():
     """Основная функция запуска бота"""
     logger.info("🚀 Запуск Telegram парсера...")
     
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN не установлен. Получите токен у @BotFather")
+        return
+    
+    # Используем бот-токен для аутентификации
     client = Client(
-        "telegram_parser", 
+        "telegram_bot", 
         api_id=API_ID, 
         api_hash=API_HASH,
+        bot_token=BOT_TOKEN,
         workdir="./"
     )
     
     try:
         await client.start()
-        logger.info("✅ Успешная аутентификация в Telegram")
+        me = await client.get_me()
+        logger.info(f"✅ Бот аутентифицирован: @{me.username}")
         
         # Инициализация компонентов
         parser = TelegramParser(client)
@@ -131,11 +138,6 @@ async def publish_post(client, post_content):
         
     except Exception as e:
         logger.error(f"❌ Ошибка публикации поста: {e}")
-        # Пробуем отправить в сохраненные сообщения для отладки
-        try:
-            await client.send_message("me", "❌ Не удалось отправить в канал. Ошибка: " + str(e))
-        except:
-            pass
         raise
 
 async def safe_stop_client(client):

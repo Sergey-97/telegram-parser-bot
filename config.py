@@ -10,6 +10,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 # Настройки Telegram API
 API_ID = int(os.getenv('API_ID'))
 API_HASH = os.getenv('API_HASH')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')  # Добавляем бот-токен
 
 # Целевой канал для публикации
 TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', '@mar_factor')
