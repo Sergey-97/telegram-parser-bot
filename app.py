@@ -127,18 +127,9 @@ def start_scheduler():
         logger.error(f"❌ Ошибка запуска планировщика: {e}")
         return None
 
-# Глобальная переменная для хранения планировщика
-scheduler = None
-
-@app.before_first_request
-def initialize():
-    """Инициализация при первом запросе"""
-    global scheduler
-    scheduler = start_scheduler()
+# Запускаем планировщик при импорте
+scheduler = start_scheduler()
 
 if __name__ == '__main__':
-    # Инициализируем при прямом запуске
-    scheduler = start_scheduler()
-    
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
