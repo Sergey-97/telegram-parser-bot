@@ -60,6 +60,21 @@ def message_exists(message_text, channel_url):
     
     return count > 0
 
+def post_exists(post_content):
+    """Проверяет, был ли уже отправлен такой пост за последние 24 часа"""
+    conn = sqlite3.connect('telegram_parser.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT COUNT(*) FROM posts 
+        WHERE post_content = ? AND created_at > datetime('now', '-1 day')
+    ''', (post_content,))
+    
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    return count > 0
+
 def get_last_messages(limit=10):
     """Получает последние сообщения из базы данных"""
     conn = sqlite3.connect('telegram_parser.db')
@@ -84,30 +99,6 @@ def get_last_messages(limit=10):
     conn.close()
     return messages
 
-def get_messages_by_marketplace(marketplace, limit=20):
-    """Получает сообщения по определенному маркетплейсу"""
-    conn = sqlite3.connect('telegram_parser.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT message_text, channel_url, created_at 
-        FROM messages 
-        WHERE marketplace = ? 
-        ORDER BY created_at DESC 
-        LIMIT ?
-    ''', (marketplace, limit))
-    
-    messages = []
-    for row in cursor.fetchall():
-        messages.append({
-            'text': row[0],
-            'channel': row[1],
-            'date': row[2]
-        })
-    
-    conn.close()
-    return messages
-
 def save_post(post_content):
     """Сохраняет созданный пост в базу данных"""
     conn = sqlite3.connect('telegram_parser.db')
@@ -120,57 +111,3 @@ def save_post(post_content):
     
     conn.commit()
     conn.close()
-
-def get_recent_posts(limit=5):
-    """Получает последние посты"""
-    conn = sqlite3.connect('telegram_parser.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT post_content, created_at 
-        FROM posts 
-        ORDER BY created_at DESC 
-        LIMIT ?
-    ''', (limit,))
-    
-    posts = []
-    for row in cursor.fetchall():
-        posts.append({
-            'content': row[0],
-            'date': row[1]
-        })
-    
-    conn.close()
-    return posts
-
-def get_message_stats():
-    """Получает статистику по сообщениям"""
-    conn = sqlite3.connect('telegram_parser.db')
-    cursor = conn.cursor()
-    
-    # Общее количество сообщений
-    cursor.execute('SELECT COUNT(*) FROM messages')
-    total_messages = cursor.fetchone()[0]
-    
-    # Количество сообщений по маркетплейсам
-    cursor.execute('''
-        SELECT marketplace, COUNT(*) 
-        FROM messages 
-        GROUP BY marketplace
-    ''')
-    
-    marketplace_stats = {}
-    for row in cursor.fetchall():
-        marketplace_stats[row[0]] = row[1]
-    
-    # Количество уникальных каналов
-    cursor.execute('SELECT COUNT(DISTINCT channel_url) FROM messages')
-    unique_channels = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    return {
-        'total_messages': total_messages,
-        'marketplace_stats': marketplace_stats,
-        'unique_channels': unique_channels
-    }
