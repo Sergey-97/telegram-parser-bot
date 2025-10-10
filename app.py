@@ -47,81 +47,46 @@ def home():
 def health():
     return "✅ Сервер работает"
 
-@app.route('/run-bot')
-def run_bot():
-    """Полный запуск бота"""
+@app.route('/run-advanced')
+def run_advanced():
+    """Запуск улучшенного бота"""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        from bot_runner import run_bot
-        result = loop.run_until_complete(run_bot())
+        from advanced_bot_runner import run_advanced_bot
+        result = loop.run_until_complete(run_advanced_bot())
         loop.close()
         
         return result
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
 
-@app.route('/test-parser')
-def test_parser():
-    """Тест парсинга без отправки"""
+@app.route('/parsing-stats')
+def parsing_stats():
+    """Статистика парсинга"""
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        from parsing_state import get_parsing_stats, is_first_run
         
-        from simple_parser import parse_all_channels_simple
-        result = loop.run_until_complete(parse_all_channels_simple())
-        loop.close()
+        stats = get_parsing_stats()
+        first_run = is_first_run()
         
-        stats = result['stats']
-        messages = result['messages']
+        return f"""
+        <h2>📊 Статистика парсинга</h2>
         
-        html_result = f"""
-        <h2>🧪 Тест парсинга</h2>
-        <p><strong>Найдено сообщений:</strong> {len(messages)}</p>
+        <div style="background: #f0f8ff; padding: 15px; border-radius: 10px;">
+            <p><strong>🎯 Режим:</strong> {'🆕 ПЕРВЫЙ ЗАПУСК' if first_run else '🔄 РЕГУЛЯРНЫЙ ПАРСИНГ'}</p>
+            <p><strong>🌐 Обработано каналов:</strong> {stats['total_channels']}</p>
+            <p><strong>📨 Всего сообщений в базе:</strong> {stats['total_messages_parsed']}</p>
+        </div>
         
-        <h3>📊 Статистика:</h3>
-        <table border="1" style="border-collapse: collapse; width: 100%;">
-            <tr>
-                <th>Канал</th>
-                <th>Статус</th>
-                <th>Сообщений</th>
-                <th>Детали</th>
-            </tr>
+        <p><strong>💡 Совет:</strong> {'Запустите парсинг для наполнения базы данных' if first_run else 'База данных уже содержит исторические данные'}</p>
+        
+        <a href="/run-advanced">🚀 Запустить улучшенный парсинг</a> | 
+        <a href="/">← Назад</a>
         """
-        
-        for stat in stats:
-            if stat.get('success'):
-                status = "✅ Успешно"
-                details = f"Новых: {stat['new_messages']}"
-            else:
-                status = "❌ Ошибка"
-                details = stat.get('error', 'Unknown')
-            
-            html_result += f"""
-            <tr>
-                <td>{stat.get('channel', 'N/A')}</td>
-                <td>{status}</td>
-                <td>{stat.get('new_messages', 0)}</td>
-                <td>{details}</td>
-            </tr>
-            """
-        
-        html_result += "</table>"
-        
-        if messages:
-            html_result += f"""
-            <h3>📝 Примеры сообщений:</h3>
-            <ol>
-            {"".join([f"<li>{msg[:150]}...</li>" for msg in messages[:5]])}
-            </ol>
-            """
-        
-        html_result += '<a href="/">← Назад</a>'
-        return html_result
-        
     except Exception as e:
-        return f"❌ Ошибка теста: {str(e)}"
+        return f"❌ Ошибка: {str(e)}"
 
 @app.route('/test-send')
 def test_send():

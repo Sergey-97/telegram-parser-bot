@@ -97,3 +97,36 @@ def save_post(post_content):
     
     conn.commit()
     conn.close()
+    def init_db():
+     """Инициализирует базу данных"""
+    conn = sqlite3.connect('telegram_parser.db')
+    cursor = conn.cursor()
+    
+    # Таблица для сообщений
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_text TEXT NOT NULL,
+            channel_url TEXT NOT NULL,
+            marketplace TEXT,
+            message_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Таблица для постов
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    logger.info("✅ База данных инициализирована")
+    
+    # Инициализируем состояние парсинга
+    from parsing_state import init_parsing_state
+    init_parsing_state()
