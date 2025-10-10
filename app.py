@@ -19,14 +19,15 @@ except Exception as e:
 @app.route('/')
 def home():
     return """
-    <h1>🤖 Telegram Parser Bot - РЕАЛЬНЫЙ ПАРСИНГ</h1>
+    <h1>🤖 Telegram Parser Bot - УЛУЧШЕННЫЙ ПАРСИНГ</h1>
     <p>Бот для парсинга реальных данных с Telegram каналов</p>
     
     <h3>🚀 Действия:</h3>
     <ul>
-        <li><a href="/run-now">/run-now</a> - Запуск реального парсинга</li>
+        <li><a href="/run-now">/run-now</a> - Запуск улучшенного парсинга</li>
         <li><a href="/health">/health</a> - Проверка работы</li>
-        <li><a href="/test-parsing">/test-parsing</a> - Тест парсинга (без отправки)</li>
+        <li><a href="/test-access">/test-access</a> - Тест доступа к каналам</li>
+        <li><a href="/clear-db">/clear-db</a> - Очистка базы (если много дублей)</li>
     </ul>
     
     <h3>📊 Каналы для парсинга:</h3>
@@ -36,7 +37,11 @@ def home():
         <li>@ozon_adv</li>
         <li>@sklad1313</li>
         <li>@sellmonitor_com</li>
-        <li>и другие...</li>
+        <li>@redmilliard</li>
+        <li>@marketplace_hogwarts</li>
+        <li>@mpgo_ru</li>
+        <li>@ProdaemWB</li>
+        <li>@ProdaemOZON</li>
     </ul>
     """
 
@@ -46,7 +51,7 @@ def health():
 
 @app.route('/run-now')
 def run_now():
-    """Запуск бота с реальным парсингом"""
+    """Запуск бота с улучшенным парсингом"""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -55,50 +60,109 @@ def run_now():
         result = loop.run_until_complete(run_bot())
         loop.close()
         
-        return f"""
-        <h2>🎯 Результат выполнения:</h2>
-        <p>{result}</p>
-        <p><strong>📋 Проверьте логи в Render Dashboard для деталей парсинга</strong></p>
-        <a href="/">← Назад</a>
-        """
+        return result
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
 
-@app.route('/test-parsing')
-def test_parsing():
-    """Тест парсинга без отправки поста"""
+@app.route('/test-access')
+def test_access():
+    """Тест доступа к каналам"""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        from bot_runner import parse_all_channels
+        from bot_runner import parse_channels_improved
         from pyrogram import Client
         from config import API_ID, API_HASH, BOT_TOKEN
         
         client = Client("test_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
         
-        async def test_parse():
+        async def test():
             await client.start()
-            messages = await parse_all_channels(client)
+            result = await parse_channels_improved(client)
             await client.stop()
-            return messages
+            return result
         
-        messages = loop.run_until_complete(test_parse())
+        parsing_result = loop.run_until_complete(test())
         loop.close()
         
-        return f"""
-        <h2>🧪 Тест парсинга</h2>
+        stats = parsing_result['stats']
+        messages = parsing_result['messages']
+        
+        html_result = f"""
+        <h2>🧪 Тест доступа к каналам</h2>
         <p><strong>Найдено сообщений:</strong> {len(messages)}</p>
         
-        <h3>📝 Примеры сообщений:</h3>
-        <ol>
-        {"".join([f"<li>{msg[:200]}...</li>" for msg in messages[:5]])}
-        </ol>
+        <h3>📊 Статистика доступа:</h3>
+        <table border="1" style="border-collapse: collapse; width: 100%;">
+            <tr>
+                <th>Канал</th>
+                <th>Статус</th>
+                <th>Сообщений</th>
+                <th>Детали</th>
+            </tr>
+        """
         
+        for channel, data in stats.items():
+            if data.get('success'):
+                status = "✅ Доступен"
+                details = f"Новых: {data.get('new_messages', 0)}"
+            else:
+                status = "❌ Ошибка"
+                details = data.get('error', 'Unknown')
+            
+            html_result += f"""
+            <tr>
+                <td>{channel}</td>
+                <td>{status}</td>
+                <td>{data.get('new_messages', 0)}</td>
+                <td>{details}</td>
+            </tr>
+            """
+        
+        html_result += "</table>"
+        
+        if messages:
+            html_result += f"""
+            <h3>📝 Примеры сообщений ({len(messages)} всего):</h3>
+            <ol>
+            {"".join([f"<li>{msg[:150]}...</li>" for msg in messages[:5]])}
+            </ol>
+            """
+        
+        html_result += '<a href="/">← Назад</a>'
+        return html_result
+        
+    except Exception as e:
+        return f"❌ Ошибка теста: {str(e)}"
+
+@app.route('/clear-db')
+def clear_db():
+    """Очистка базы данных от дубликатов"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect('telegram_parser.db')
+        cursor = conn.cursor()
+        
+        # Удаляем старые сообщения (старше 7 дней)
+        cursor.execute("DELETE FROM messages WHERE created_at < datetime('now', '-7 days')")
+        deleted_messages = cursor.rowcount
+        
+        # Удаляем старые посты
+        cursor.execute("DELETE FROM posts WHERE created_at < datetime('now', '-3 days')")
+        deleted_posts = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        return f"""
+        <h2>🧹 Очистка базы данных</h2>
+        <p>✅ Удалено сообщений: {deleted_messages}</p>
+        <p>✅ Удалено постов: {deleted_posts}</p>
         <a href="/">← Назад</a>
         """
     except Exception as e:
-        return f"❌ Ошибка теста: {str(e)}"
+        return f"❌ Ошибка очистки: {str(e)}"
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))

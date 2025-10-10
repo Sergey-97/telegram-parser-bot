@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pyrogram import Client
+from pyrogram.errors import ChannelInvalid, ChannelPrivate, UsernameNotOccupied
 from database import get_last_messages, save_post, save_message, message_exists
 from ai_processor import AIProcessor
 from post_formatter import PostFormatter
@@ -9,9 +10,9 @@ from config import API_ID, API_HASH, TARGET_CHANNEL, BOT_TOKEN, SOURCE_CHANNELS
 logger = logging.getLogger(__name__)
 
 async def run_bot():
-    """Основная функция запуска бота с реальным парсингом"""
+    """Основная функция запуска бота с улучшенным парсингом"""
     logger.info("=" * 60)
-    logger.info("🚀 ЗАПУСК БОТА - РЕАЛЬНЫЙ ПАРСИНГ")
+    logger.info("🚀 ЗАПУСК БОТА - УЛУЧШЕННЫЙ ПАРСИНГ")
     logger.info("=" * 60)
     
     if not BOT_TOKEN:
@@ -34,9 +35,12 @@ async def run_bot():
         me = await client.get_me()
         logger.info(f"✅ Бот аутентифицирован: @{me.username}")
         
-        # РЕАЛЬНЫЙ ПАРСИНГ КАНАЛОВ
-        logger.info("2. 🔍 ЗАПУСК РЕАЛЬНОГО ПАРСИНГА КАНАЛОВ...")
-        all_parsed_messages = await parse_all_channels(client)
+        # УЛУЧШЕННЫЙ ПАРСИНГ КАНАЛОВ
+        logger.info("2. 🔍 ЗАПУСК УЛУЧШЕННОГО ПАРСИНГА...")
+        parsing_results = await parse_channels_improved(client)
+        
+        all_parsed_messages = parsing_results['messages']
+        channel_stats = parsing_results['stats']
         
         # Создание поста
         ai_processor = AIProcessor()
@@ -45,6 +49,7 @@ async def run_bot():
         if all_parsed_messages:
             logger.info(f"3. 🧠 СОЗДАНИЕ ПОСТА НА ОСНОВЕ {len(all_parsed_messages)} РЕАЛЬНЫХ СООБЩЕНИЙ")
             structured_content = ai_processor.structure_content(all_parsed_messages, [])
+            post_type = "РЕАЛЬНЫЕ ДАННЫЕ"
         else:
             logger.info("3. 🔄 ИСПОЛЬЗУЮ РЕЗЕРВНЫЙ КОНТЕНТ")
             recent_messages = get_last_messages(limit=10)
@@ -56,6 +61,7 @@ async def run_bot():
                 logger.info("   📝 Использую тестовые данные")
             
             structured_content = ai_processor.structure_content(texts, [])
+            post_type = "РЕЗЕРВНЫЕ ДАННЫЕ"
         
         # Форматирование и отправка
         post_content = post_formatter.format_structured_post(structured_content)
@@ -70,11 +76,20 @@ async def run_bot():
         await client.send_message(TARGET_CHANNEL, post_content)
         logger.info(f"✅ ПОСТ УСПЕШНО ОПУБЛИКОВАН В КАНАЛЕ {TARGET_CHANNEL}")
         
-        # Итоговая статистика
-        result_message = f"✅ Пост отправлен! Реальных сообщений: {len(all_parsed_messages)}"
-        logger.info(f"🎯 ИТОГ: {result_message}")
+        # Детальная статистика
+        stats_message = generate_stats_message(channel_stats, len(all_parsed_messages), post_type)
         
-        return result_message
+        logger.info(f"🎯 ИТОГ: {stats_message}")
+        
+        return f"""
+        <h2>🎯 Результат выполнения</h2>
+        <p><strong>Тип поста:</strong> {post_type}</p>
+        <p><strong>Реальных сообщений:</strong> {len(all_parsed_messages)}</p>
+        <h3>📊 Статистика по каналам:</h3>
+        <pre>{stats_message}</pre>
+        <p><strong>📋 Подробные логи смотрите в Render Dashboard</strong></p>
+        <a href="/">← Назад</a>
+        """
         
     except Exception as e:
         logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
@@ -85,14 +100,16 @@ async def run_bot():
         if client:
             await client.stop()
 
-async def parse_all_channels(client):
-    """Парсит все каналы и возвращает реальные сообщения"""
+async def parse_channels_improved(client):
+    """Улучшенный парсинг каналов с детальной статистикой"""
     all_messages = []
-    total_new_messages = 0
+    channel_stats = {}
     
     logger.info(f"📡 ПАРСИНГ {len(SOURCE_CHANNELS)} КАНАЛОВ:")
+    logger.info("=" * 50)
     
     for i, channel_url in enumerate(SOURCE_CHANNELS, 1):
+        channel_messages = []
         try:
             # Извлекаем идентификатор канала
             if channel_url.startswith('https://t.me/'):
@@ -106,51 +123,101 @@ async def parse_all_channels(client):
             
             # Получаем информацию о канале
             chat = await client.get_chat(channel_id)
-            logger.info(f"      📝 Канал: {chat.title}")
+            logger.info(f"      📝 Название: {chat.title}")
+            logger.info(f"      👥 Участников: {getattr(chat, 'members_count', 'N/A')}")
             
             # Парсим сообщения
-            channel_messages = []
             messages_count = 0
+            new_messages_count = 0
             
-            async for message in client.get_chat_history(chat.id, limit=15):
+            async for message in client.get_chat_history(chat.id, limit=20):
                 if message.text and message.text.strip():
                     message_text = message.text.strip()
+                    messages_count += 1
                     
                     # Проверяем на дубликаты
                     if not message_exists(message_text, channel_url):
                         # Сохраняем в базу
                         save_message(message_text, channel_url, 'OTHER')
                         channel_messages.append(message_text)
-                        messages_count += 1
+                        new_messages_count += 1
             
             all_messages.extend(channel_messages)
-            total_new_messages += messages_count
             
-            if messages_count > 0:
-                logger.info(f"      ✅ Найдено {messages_count} новых сообщений")
-                # Логируем первые 2 сообщения для отладки
-                for j, msg in enumerate(channel_messages[:2], 1):
-                    logger.info(f"         {j}. {msg[:100]}...")
+            # Статистика по каналу
+            channel_stats[channel_id] = {
+                'title': chat.title,
+                'total_messages': messages_count,
+                'new_messages': new_messages_count,
+                'success': True
+            }
+            
+            if new_messages_count > 0:
+                logger.info(f"      ✅ Найдено {new_messages_count} новых из {messages_count} сообщений")
+                # Логируем примеры сообщений
+                for j, msg in enumerate(channel_messages[:3], 1):
+                    logger.info(f"         📨 {j}. {msg[:80]}...")
             else:
-                logger.info(f"      ⚠️ Новых сообщений не найдено")
+                logger.info(f"      ⚠️ Новых сообщений: 0 (всего сообщений: {messages_count})")
             
+        except ChannelPrivate:
+            logger.error(f"      ❌ КАНАЛ ПРИВАТНЫЙ: нет доступа")
+            channel_stats[channel_url] = {'success': False, 'error': 'Private channel'}
+        except ChannelInvalid:
+            logger.error(f"      ❌ НЕВЕРНЫЙ КАНАЛ: не существует или недоступен")
+            channel_stats[channel_url] = {'success': False, 'error': 'Invalid channel'}
+        except UsernameNotOccupied:
+            logger.error(f"      ❌ КАНАЛ НЕ СУЩЕСТВУЕТ: username не занят")
+            channel_stats[channel_url] = {'success': False, 'error': 'Username not occupied'}
         except Exception as e:
-            logger.error(f"      ❌ Ошибка парсинга {channel_url}: {str(e)}")
+            logger.error(f"      ❌ ОШИБКА ПАРСИНГА: {str(e)}")
+            channel_stats[channel_url] = {'success': False, 'error': str(e)}
     
-    logger.info(f"📊 ВСЕГО НАЙДЕНО: {total_new_messages} новых сообщений из {len(SOURCE_CHANNELS)} каналов")
-    return all_messages
+    logger.info("=" * 50)
+    logger.info(f"📊 ВСЕГО НАЙДЕНО: {len(all_messages)} новых сообщений")
+    
+    return {
+        'messages': all_messages,
+        'stats': channel_stats
+    }
+
+def generate_stats_message(channel_stats, total_messages, post_type):
+    """Генерирует детальную статистику"""
+    stats_lines = []
+    stats_lines.append(f"ТИП ПОСТА: {post_type}")
+    stats_lines.append(f"ВСЕГО СООБЩЕНИЙ: {total_messages}")
+    stats_lines.append("")
+    stats_lines.append("СТАТИСТИКА ПО КАНАЛАМ:")
+    stats_lines.append("-" * 40)
+    
+    successful_channels = 0
+    for channel, stats in channel_stats.items():
+        if stats.get('success'):
+            successful_channels += 1
+            stats_lines.append(f"✅ {channel}")
+            stats_lines.append(f"   📝 {stats.get('title', 'N/A')}")
+            stats_lines.append(f"   📨 Новых: {stats.get('new_messages', 0)}")
+            stats_lines.append(f"   📊 Всего: {stats.get('total_messages', 0)}")
+        else:
+            stats_lines.append(f"❌ {channel}")
+            stats_lines.append(f"   💥 Ошибка: {stats.get('error', 'Unknown error')}")
+        stats_lines.append("")
+    
+    stats_lines.append(f"УСПЕШНЫХ КАНАЛОВ: {successful_channels}/{len(channel_stats)}")
+    
+    return "\n".join(stats_lines)
 
 def get_fallback_messages():
     """Возвращает тестовые сообщения если парсинг не сработал"""
     return [
-        "OZON: новые правила модерации карточек товаров с 1 ноября",
-        "Wildberries увеличивает комиссию для категории 'Электроника' с 5% до 7%",
-        "Яндекс Маркет запускает экспресс-доставку за 2 часа в Москве",
-        "OZON Travel: добавлены новые направления для бронирования отелей",
-        "WB вводит обязательную маркировку для товаров категории 'Одежда'",
+        "OZON: новые правила модерации карточек товаров с 1 ноября - обязательные видеообзоры",
+        "Wildberries увеличивает комиссию для категории 'Электроника' с 5% до 7% с 15 ноября",
+        "Яндекс Маркет запускает экспресс-доставку за 2 часа в Москве и Санкт-Петербурге",
+        "OZON Travel: добавлены новые направления для бронирования отелей в Турции и ОАЭ",
+        "WB вводит обязательную маркировку для всех товаров категории 'Одежда'",
         "OZON Карта: кешбэк увеличен до 10% для постоянных покупателей",
-        "Wildberries обновляет алгоритм выдачи товаров в поиске",
-        "Яндекс Доставка расширяет зону покрытия до 200 городов",
-        "OZON Marketplace: новые требования к описанию товаров",
-        "WB: изменения в политике возвратов - срок увеличен до 45 дней"
+        "Wildberries обновляет алгоритм выдачи товаров - приоритет продавцам с высоким рейтингом",
+        "Яндекс Доставка расширяет зону покрытия до 200 городов России",
+        "OZON Marketplace: новые требования к описанию товаров - минимально 1000 символов",
+        "WB: изменения в политике возвратов - срок возврата увеличен до 45 дней"
     ]
