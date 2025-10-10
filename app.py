@@ -25,120 +25,138 @@ def home():
     
     <h3>🚀 Действия:</h3>
     <ul>
+        <li><a href="/run-bot">/run-bot</a> - Полный запуск парсера</li>
+        <li><a href="/test-parser">/test-parser</a> - Тест парсинга</li>
+        <li><a href="/test-send">/test-send</a> - Тест отправки</li>
         <li><a href="/health">/health</a> - Проверка работы</li>
-        <li><a href="/test-ai">/test-ai</a> - Тест AI обработки</li>
-        <li><a href="/test-db">/test-db</a> - Тест базы данных</li>
-        <li><a href="/create-post">/create-post</a> - Создать тестовый пост</li>
     </ul>
     
-    <p><strong>Статус:</strong> ✅ Базовая функциональность работает</p>
+    <h3>📊 Каналы для парсинга:</h3>
+    <ul>
+        <li>@ozonmarketplace</li>
+        <li>@wbsellerofficial</li>
+        <li>@ozon_adv</li>
+        <li>@sklad1313</li>
+        <li>@sellmonitor_com</li>
+    </ul>
+    
+    <p><strong>Статус:</strong> ✅ Telegram функциональность добавлена</p>
     """
 
 @app.route('/health')
 def health():
     return "✅ Сервер работает"
 
-@app.route('/test-ai')
-def test_ai():
-    """Тест AI обработки"""
+@app.route('/run-bot')
+def run_bot():
+    """Полный запуск бота"""
     try:
-        from ai_processor import AIProcessor
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        from bot_runner import run_bot
+        result = loop.run_until_complete(run_bot())
+        loop.close()
+        
+        return result
+    except Exception as e:
+        return f"❌ Ошибка: {str(e)}"
+
+@app.route('/test-parser')
+def test_parser():
+    """Тест парсинга без отправки"""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        from simple_parser import parse_all_channels_simple
+        result = loop.run_until_complete(parse_all_channels_simple())
+        loop.close()
+        
+        stats = result['stats']
+        messages = result['messages']
+        
+        html_result = f"""
+        <h2>🧪 Тест парсинга</h2>
+        <p><strong>Найдено сообщений:</strong> {len(messages)}</p>
+        
+        <h3>📊 Статистика:</h3>
+        <table border="1" style="border-collapse: collapse; width: 100%;">
+            <tr>
+                <th>Канал</th>
+                <th>Статус</th>
+                <th>Сообщений</th>
+                <th>Детали</th>
+            </tr>
+        """
+        
+        for stat in stats:
+            if stat.get('success'):
+                status = "✅ Успешно"
+                details = f"Новых: {stat['new_messages']}"
+            else:
+                status = "❌ Ошибка"
+                details = stat.get('error', 'Unknown')
+            
+            html_result += f"""
+            <tr>
+                <td>{stat.get('channel', 'N/A')}</td>
+                <td>{status}</td>
+                <td>{stat.get('new_messages', 0)}</td>
+                <td>{details}</td>
+            </tr>
+            """
+        
+        html_result += "</table>"
+        
+        if messages:
+            html_result += f"""
+            <h3>📝 Примеры сообщений:</h3>
+            <ol>
+            {"".join([f"<li>{msg[:150]}...</li>" for msg in messages[:5]])}
+            </ol>
+            """
+        
+        html_result += '<a href="/">← Назад</a>'
+        return html_result
+        
+    except Exception as e:
+        return f"❌ Ошибка теста: {str(e)}"
+
+@app.route('/test-send')
+def test_send():
+    """Тест отправки сообщения"""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        from telegram_manager import telegram_manager
         from post_formatter import PostFormatter
         
-        ai = AIProcessor()
+        # Создаем тестовый пост
         formatter = PostFormatter()
+        test_post = formatter._create_fallback_post()
         
-        # Тестовые сообщения
-        test_messages = [
-            "OZON запускает новую систему доставки",
-            "WB обновляет правила возвратов",
-            "Яндекс Маркет представляет новые инструменты"
-        ]
+        # Отправляем
+        success = loop.run_until_complete(telegram_manager.send_message(test_post))
+        loop.run_until_complete(telegram_manager.cleanup())
+        loop.close()
         
-        # Обработка AI
-        structured = ai.structure_content(test_messages, [])
-        post = formatter.format_structured_post(structured)
-        
-        return f"""
-        <h2>🧪 Тест AI обработки</h2>
-        <p><strong>Обработано сообщений:</strong> {len(test_messages)}</p>
-        
-        <h3>📝 Результат:</h3>
-        <pre>{post}</pre>
-        
-        <a href="/">← Назад</a>
-        """
+        if success:
+            return """
+            <h2>✅ Тест отправки успешен!</h2>
+            <p>Тестовое сообщение отправлено в канал.</p>
+            <a href="/">← Назад</a>
+            """
+        else:
+            return """
+            <h2>❌ Тест отправки не удался</h2>
+            <p>Проверьте BOT_TOKEN и права бота в канале.</p>
+            <a href="/">← Назад</a>
+            """
+            
     except Exception as e:
-        return f"❌ Ошибка AI: {str(e)}"
-
-@app.route('/test-db')
-def test_db():
-    """Тест базы данных"""
-    try:
-        from database import save_message, get_last_messages, save_post
-        
-        # Сохраняем тестовое сообщение
-        save_message("Тестовое сообщение для проверки БД", "test_channel", "TEST")
-        
-        # Получаем сообщения
-        messages = get_last_messages(5)
-        
-        # Сохраняем тестовый пост
-        save_post("Тестовый пост в базе данных")
-        
-        return f"""
-        <h2>🧪 Тест базы данных</h2>
-        <p><strong>Сообщений в базе:</strong> {len(messages)}</p>
-        
-        <h3>📋 Последние сообщения:</h3>
-        <ul>
-        {"".join([f"<li>{msg['text'][:50]}...</li>" for msg in messages])}
-        </ul>
-        
-        <a href="/">← Назад</a>
-        """
-    except Exception as e:
-        return f"❌ Ошибка БД: {str(e)}"
-
-@app.route('/create-post')
-def create_post():
-    """Создание тестового поста"""
-    try:
-        from ai_processor import AIProcessor
-        from post_formatter import PostFormatter
-        from database import save_post
-        
-        ai = AIProcessor()
-        formatter = PostFormatter()
-        
-        # Тестовые данные
-        test_data = [
-            "OZON: новые правила модерации карточек товаров",
-            "Wildberries увеличивает комиссию для электроники",
-            "Яндекс Маркет запускает экспресс-доставку",
-            "OZON улучшает логистические процессы",
-            "WB вводит новые требования к карточкам"
-        ]
-        
-        # Создаем пост
-        structured = ai.structure_content(test_data, [])
-        post_content = formatter.format_structured_post(structured)
-        
-        # Сохраняем в базу
-        save_post(post_content)
-        
-        return f"""
-        <h2>📝 Тестовый пост создан!</h2>
-        <p><strong>Длина поста:</strong> {len(post_content)} символов</p>
-        
-        <h3>📄 Содержание:</h3>
-        <pre>{post_content}</pre>
-        
-        <p><strong>✅ Пост сохранен в базу данных</strong></p>
-        <a href="/">← Назад</a>
-        """
-    except Exception as e:
-        return f"❌ Ошибка создания поста: {str(e)}"
+        return f"❌ Ошибка отправки: {str(e)}"
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
