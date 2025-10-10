@@ -17,6 +17,8 @@ class TelegramParser:
             # Извлекаем username/id канала из URL
             if channel_url.startswith('https://t.me/'):
                 channel_identifier = channel_url.replace('https://t.me/', '')
+            elif channel_url.startswith('@'):
+                channel_identifier = channel_url[1:]
             else:
                 channel_identifier = channel_url
                 
@@ -24,27 +26,38 @@ class TelegramParser:
             new_messages_count = 0
             duplicate_count = 0
             
-            async for message in self.client.get_chat_history(channel_identifier, limit=limit):
-                if message.text:
-                    message_text = message.text
-                    
-                    # Проверяем, есть ли уже такое сообщение в базе
-                    if not message_exists(message_text, channel_url):
-                        # Определяем маркетплейс
-                        marketplace = self.ai_processor.analyze_marketplace(message_text, channel_url)
+            try:
+                async for message in self.client.get_chat_history(channel_identifier, limit=limit):
+                    if message.text and message.text.strip():
+                        message_text = message.text.strip()
                         
-                        # Сохраняем в базу
-                        save_message(message_text, channel_url, marketplace)
-                        messages.append(message_text)
-                        new_messages_count += 1
-                    else:
-                        duplicate_count += 1
+                        # Проверяем, есть ли уже такое сообщение в базе
+                        if not message_exists(message_text, channel_url):
+                            # Определяем маркетплейс
+                            marketplace = self.ai_processor.analyze_marketplace(message_text, channel_url)
+                            
+                            # Сохраняем в базу
+                            save_message(message_text, channel_url, marketplace)
+                            messages.append(message_text)
+                            new_messages_count += 1
+                        else:
+                            duplicate_count += 1
+            except Exception as e:
+                print(f"⚠️ Ошибка доступа к каналу {channel_url}: {e}")
+                return {
+                    'channel': channel_url,
+                    'new_messages': 0,
+                    'duplicates': 0,
+                    'messages': [],
+                    'marketplace_stats': {},
+                    'error': str(e)
+                }
             
             # Статистика по маркетплейсам для новых сообщений
             marketplace_stats = {}
             if new_messages_count > 0:
                 for msg in messages:
-                    marketplace = self.ai_processor.analyze_marketplace(msg)
+                    marketplace = self.ai_processor.analyze_marketplace(msg, channel_url)
                     marketplace_stats[marketplace] = marketplace_stats.get(marketplace, 0) + 1
                 
                 print(f"✅ {channel_url}: {new_messages_count} новых, {duplicate_count} дубликатов")

@@ -16,113 +16,120 @@ class AIProcessor:
         text_lower = text.lower()
         channel_lower = channel_url.lower()
         
-        # Определяем по URL канала
-        if 'ozon' in channel_lower:
+        # Определяем по URL канала (приоритет)
+        if 'ozon' in channel_lower or 'prodaemozon' in channel_lower:
             return 'OZON'
-        elif 'wb' in channel_lower or 'wildberr' in channel_lower:
+        elif 'wb' in channel_lower or 'wildberr' in channel_lower or 'prodaemwb' in channel_lower:
             return 'WB'
         elif 'yandex' in channel_lower or 'market' in channel_lower:
             return 'YANDEX'
-            
-        # Улучшенные паттерны для определения маркетплейсов по тексту
-        ozon_patterns = [
-            r'\bozon\b', r'\bозон\b', r'\bozon\s*marketplace', r'\bозон\s*маркетплейс',
-            r'\bozon\s*seller', r'\bозон\s*продавец', r'\bozon\s*adv', r'\bозон\s*реклама',
-            r'\bozon\s*travel', r'\bозон\s*путешествия', r'\bozon\s*card', r'\bозон\s*карта',
-            r'\bоzon\b', r'\bOZON\b', r'\bOzon\b'
-        ]
-        
-        wb_patterns = [
-            r'\bwb\b', r'\bвб\b', r'\bwildberries\b', r'\bвайлдберриз\b', r'\bвалдберриз\b',
-            r'\bwildberry\b', r'\bвб\s*seller', r'\bвб\s*продавец', r'\bwb\s*seller',
-            r'\bwildberries\s*official', r'\bвб\s*официальный', r'\bподборки\s*wb',
-            r'\bwildberries\s*marketplace', r'\bвб\s*маркетплейс', r'\bWB\b', r'\bWb\b'
-        ]
-        
-        yandex_patterns = [
-            r'\byandex\b', r'\bяндекс\b', r'\bяндекс\s*market', r'\bяндекс\s*маркет',
-            r'\byandex\s*market', r'\bяндекс\s*доставка', r'\byandex\s*delivery',
-            r'\bmarket\s*place', r'\bмаркет\s*плейс', r'\bYandex\b', r'\bYANDEX\b'
-        ]
-        
-        # Проверяем OZON
-        ozon_score = sum(1 for pattern in ozon_patterns if re.search(pattern, text_lower, re.IGNORECASE))
-        if ozon_score > 0:
+        elif 'ozon_adv' in channel_lower:
             return 'OZON'
+            
+        # Улучшенные паттерны для текста
+        ozon_keywords = [
+            'ozon', 'озон', 'oзон', 'o-zon', 'озон.', 'озон,', 'озон!',
+            'озона', 'озоне', 'озону', 'озоном', 'озоны',
+            'oзон.', 'oзон,', 'oзон!', 'oзона', 'oзоне', 'oзону', 'oзоном'
+        ]
         
-        # Проверяем Wildberries
-        wb_score = sum(1 for pattern in wb_patterns if re.search(pattern, text_lower, re.IGNORECASE))
-        if wb_score > 0:
+        wb_keywords = [
+            'wb', 'вб', 'wildberries', 'вайлдберриз', 'валдберриз', 'wildberry',
+            'вб.', 'вб,', 'вб!', 'вб?', 'wb.', 'wb,', 'wb!', 'wb?',
+            'wildberries.', 'wildberries,', 'wildberries!'
+        ]
+        
+        yandex_keywords = [
+            'yandex', 'яндекс', 'yandex.', 'yandex,', 'yandex!',
+            'яндекс.', 'яндекс,', 'яндекс!', 'яндекс?',
+            'яндекс.market', 'yandex market', 'яндекс маркет'
+        ]
+        
+        # Проверяем ключевые слова в тексте
+        ozon_matches = sum(1 for keyword in ozon_keywords if keyword in text_lower)
+        wb_matches = sum(1 for keyword in wb_keywords if keyword in text_lower)
+        yandex_matches = sum(1 for keyword in yandex_keywords if keyword in text_lower)
+        
+        if ozon_matches > wb_matches and ozon_matches > yandex_matches:
+            return 'OZON'
+        elif wb_matches > ozon_matches and wb_matches > yandex_matches:
             return 'WB'
-        
-        # Проверяем Yandex Market
-        yandex_score = sum(1 for pattern in yandex_patterns if re.search(pattern, text_lower, re.IGNORECASE))
-        if yandex_score > 0:
+        elif yandex_matches > ozon_matches and yandex_matches > wb_matches:
             return 'YANDEX'
+        
+        # Если нет явных указаний, проверяем контекст
+        if any(word in text_lower for word in ['маркетплейс', 'marketplace', 'продавец', 'seller']):
+            if any(word in text_lower for word in ['озон', 'ozon']):
+                return 'OZON'
+            elif any(word in text_lower for word in ['вб', 'wb', 'wildberr']):
+                return 'WB'
+            elif any(word in text_lower for word in ['яндекс', 'yandex']):
+                return 'YANDEX'
         
         return 'OTHER'
 
     def structure_content(self, source_texts, discussion_texts):
-        """Структурирует контент для поста на основе реального парсинга"""
+        """Структурирует контент с улучшенной логикой"""
         try:
             # Объединяем все тексты для анализа
             all_content = source_texts + discussion_texts
             
             if not all_content:
+                print("⚠️ Нет контента для анализа, использую резервные данные")
                 return self._create_fallback_structure([])
 
+            print(f"📝 Анализирую {len(all_content)} сообщений...")
+            
             # Анализируем тексты для подсчета по маркетплейсам
             marketplace_stats = {'OZON': 0, 'WB': 0, 'YANDEX': 0, 'OTHER': 0}
             
-            # Собираем ключевые темы для каждого маркетплейса
-            ozon_themes = set()
-            wb_themes = set()
-            yandex_themes = set()
+            # Собираем конкретные темы и ключевые фразы
+            ozon_themes = []
+            wb_themes = []
+            yandex_themes = []
             
             for text in all_content:
                 marketplace = self.analyze_marketplace(text)
                 marketplace_stats[marketplace] += 1
                 
-                # Анализируем темы сообщений
-                themes = self._extract_themes(text, marketplace)
+                # Извлекаем конкретные темы из текста
+                themes = self._extract_specific_themes(text, marketplace)
                 if marketplace == 'OZON':
-                    ozon_themes.update(themes)
+                    ozon_themes.extend(themes)
                 elif marketplace == 'WB':
-                    wb_themes.update(themes)
+                    wb_themes.extend(themes)
                 elif marketplace == 'YANDEX':
-                    yandex_themes.update(themes)
-
-            # Если нет данных по маркетплейсам, создаем более релевантные темы
-            if not ozon_themes and marketplace_stats['OZON'] > 0:
-                ozon_themes = {
-                    'Обновления платформы OZON',
-                    'Логистические улучшения', 
-                    'Новые инструменты для продавцов'
-                }
-                
-            if not wb_themes and marketplace_stats['WB'] > 0:
-                wb_themes = {
-                    'Обновления Wildberries',
-                    'Изменения в работе с продавцами',
-                    'Оптимизация процессов'
-                }
-
+                    yandex_themes.extend(themes)
+            
+            # Убираем дубликаты и оставляем самые частые темы
+            ozon_top = self._get_top_themes(ozon_themes)
+            wb_top = self._get_top_themes(wb_themes)
+            yandex_top = self._get_top_themes(yandex_themes)
+            
+            # Если нет конкретных тем, создаем на основе статистики
+            if not ozon_top and marketplace_stats['OZON'] > 0:
+                ozon_top = self._generate_fallback_themes('OZON', marketplace_stats['OZON'])
+            if not wb_top and marketplace_stats['WB'] > 0:
+                wb_top = self._generate_fallback_themes('WB', marketplace_stats['WB'])
+            if not yandex_top and marketplace_stats['YANDEX'] > 0:
+                yandex_top = self._generate_fallback_themes('YANDEX', marketplace_stats['YANDEX'])
+            
             return {
-                'title': '📊 Аналитика маркетплейсов',
-                'summary': f'Проанализировано {len(all_content)} сообщений. OZON: {marketplace_stats["OZON"]}, WB: {marketplace_stats["WB"]}, Yandex: {marketplace_stats["YANDEX"]}',
+                'title': '📊 Еженедельный обзор маркетплейсов',
+                'summary': f'На основе анализа {len(all_content)} сообщений. OZON: {marketplace_stats["OZON"]}, WB: {marketplace_stats["WB"]}, Яндекс: {marketplace_stats["YANDEX"]}',
                 'sections': {
                     'OZON': {
-                        'key_points': list(ozon_themes)[:3] if ozon_themes else ['Обновления платформы OZON', 'Логистические улучшения'],
+                        'key_points': ozon_top or ['Обновления платформы OZON'],
                         'important': ['Следите за обновлениями в личном кабинете'],
                         'tips': ['Регулярно проверяйте изменения в правилах площадки']
                     },
                     'WB': {
-                        'key_points': list(wb_themes)[:3] if wb_themes else ['Обновления Wildberries', 'Изменения в работе с продавцами'],
+                        'key_points': wb_top or ['Обновления Wildberries'],
                         'important': ['Внимание к изменениям регламентов'],
                         'tips': ['Адаптируйтесь к изменениям логистики']
                     },
                     'YANDEX': {
-                        'key_points': list(yandex_themes)[:3] if yandex_themes else ['Развитие Яндекс Маркета', 'Новые функции для продавцов'],
+                        'key_points': yandex_top or ['Развитие Яндекс Маркета'],
                         'important': ['Отслеживайте новые функции площадки'],
                         'tips': ['Используйте все возможности продвижения']
                     }
@@ -134,15 +141,39 @@ class AIProcessor:
             print(f"❌ Ошибка структурирования контента: {e}")
             return self._create_fallback_structure(source_texts + discussion_texts)
 
-    def _extract_themes(self, text, marketplace):
-        """Извлекает ключевые темы из текста"""
-        themes = set()
+    def _extract_specific_themes(self, text, marketplace):
+        """Извлекает конкретные темы из текста"""
+        themes = []
         text_lower = text.lower()
         
-        # Общие темы для всех маркетплейсов
-        common_themes = {
+        # Ключевые фразы для поиска
+        key_phrases = {
+            'OZON': [
+                'доставк', 'логистик', 'тариф', 'реклам', 'продвижен', 
+                'возврат', 'выкуп', 'брак', 'карточк', 'отзыв', 'рейтинг',
+                'акци', 'распродаж', 'склад', 'аналитик', 'модерац',
+                'каталог', 'поиск', 'скидк', 'бонус', 'тревел', 'travel',
+                'карт', 'card', 'фулфилмент', 'fulfillment', 'комисс'
+            ],
+            'WB': [
+                'доставк', 'логистик', 'тариф', 'реклам', 'продвижен',
+                'возврат', 'выкуп', 'брак', 'карточк', 'отзыв', 'рейтинг', 
+                'акци', 'распродаж', 'склад', 'аналитик', 'модерац',
+                'каталог', 'поиск', 'скидк', 'бонус', 'кешбек', 'cashback',
+                'фулфилмент', 'fulfillment', 'комисс', 'выдач', 'рекомендац'
+            ],
+            'YANDEX': [
+                'доставк', 'логистик', 'тариф', 'реклам', 'продвижен',
+                'возврат', 'выкуп', 'брак', 'карточк', 'отзыв', 'рейтинг',
+                'акци', 'распродаж', 'склад', 'аналитик', 'модерац', 
+                'каталог', 'поиск', 'скидк', 'бонус', 'плюс', 'plus',
+                'доставк', 'самовывоз', 'поиск', 'выдач', 'комисс'
+            ]
+        }
+        
+        theme_map = {
             'доставк': 'Обновления доставки',
-            'логистик': 'Изменения в логистике',
+            'логистик': 'Изменения в логистике', 
             'тариф': 'Корректировки тарифов',
             'реклам': 'Обновления рекламных инструментов',
             'продвижен': 'Изменения в продвижении',
@@ -160,42 +191,82 @@ class AIProcessor:
             'каталог': 'Обновления каталога',
             'поиск': 'Алгоритмы поиска',
             'скидк': 'Система скидок',
-            'бонус': 'Бонусные программы'
+            'бонус': 'Бонусные программы',
+            'тревел': 'OZON Travel',
+            'карт': 'OZON Карта',
+            'кешбек': 'Кешбэк программы',
+            'фулфилмент': 'Fulfillment услуги',
+            'плюс': 'Яндекс Плюс',
+            'комисс': 'Изменения комиссий',
+            'выдач': 'Алгоритмы выдачи товаров',
+            'рекомендац': 'Система рекомендаций'
         }
         
-        for keyword, theme in common_themes.items():
-            if keyword in text_lower:
-                themes.add(theme)
+        phrases = key_phrases.get(marketplace, [])
+        for phrase in phrases:
+            if phrase in text_lower:
+                theme = theme_map.get(phrase, phrase)
+                if theme not in themes:
+                    themes.append(theme)
+        
+        return themes[:5]  # Ограничиваем количество тем
+
+    def _get_top_themes(self, themes, top_n=3):
+        """Возвращает самые частые темы"""
+        from collections import Counter
+        if not themes:
+            return []
+        
+        counter = Counter(themes)
+        return [theme for theme, count in counter.most_common(top_n)]
+
+    def _generate_fallback_themes(self, marketplace, count):
+        """Генерирует темы на основе статистики"""
+        base_themes = {
+            'OZON': [
+                'Обновления платформы OZON',
+                'Логистические улучшения',
+                'Новые маркетинговые инструменты'
+            ],
+            'WB': [
+                'Обновления Wildberries', 
+                'Оптимизация процессов',
+                'Изменения в работе с продавцами'
+            ],
+            'YANDEX': [
+                'Развитие Яндекс Маркета',
+                'Новые функции для продавцов',
+                'Обновления платформы'
+            ]
+        }
+        
+        themes = base_themes.get(marketplace, ['Обновления платформы'])
+        if count > 5:
+            themes.append(f'Активных обсуждений: {count}')
         
         return themes
 
     def _create_fallback_structure(self, texts):
-        """Создает резервную структуру в случае ошибки"""
-        # Анализируем тексты для статистики
+        """Создает резервную структуру"""
         marketplace_stats = {'OZON': 0, 'WB': 0, 'YANDEX': 0, 'OTHER': 0}
         for text in texts:
             marketplace = self.analyze_marketplace(text)
             marketplace_stats[marketplace] += 1
             
         return {
-            'title': '📊 Аналитика маркетплейсов',
-            'summary': f'Проанализировано {len(texts)} сообщений. OZON: {marketplace_stats["OZON"]}, WB: {marketplace_stats["WB"]}, Yandex: {marketplace_stats["YANDEX"]}' if texts else 'Ежедневный обзор ключевых трендов и изменений',
+            'title': '📊 Еженедельный обзор маркетплейсов',
+            'summary': f'На основе анализа {len(texts)} сообщений. OZON: {marketplace_stats["OZON"]}, WB: {marketplace_stats["WB"]}, Яндекс: {marketplace_stats["YANDEX"]}' if texts else 'Анализ ключевых изменений и трендов',
             'sections': {
                 'OZON': {
-                    'key_points': ['Обновления платформы для продавцов', 'Оптимизация логистических процессов'],
-                    'important': ['Следите за изменениями в личном кабинете'],
+                    'key_points': ['Обновления платформы OZON', 'Логистические процессы', 'Маркетинговые инструменты'],
+                    'important': ['Следите за обновлениями в личном кабинете'],
                     'tips': ['Используйте все доступные инструменты аналитики']
                 },
                 'WB': {
-                    'key_points': ['Изменения в работе с возвратами', 'Обновления алгоритмов выдачи'],
-                    'important': ['Внимание к обновлениям регламентов'],
+                    'key_points': ['Обновления Wildberries', 'Процессы выкупа', 'Работа с возвратами'],
+                    'important': ['Внимание к изменениям регламентов'],
                     'tips': ['Регулярно мониторьте статистику продаж']
-                },
-                'YANDEX': {
-                    'key_points': ['Развитие платформы Яндекс Маркет', 'Новые инструменты для продавцов'],
-                    'important': ['Отслеживайте новые функции площадки'],
-                    'tips': ['Используйте все возможности продвижения']
                 }
             },
-            'recommendations': 'Следите за официальными объявлениями маркетплейсов и участвуйте в профессиональных сообществах.'
+            'recommendations': 'Следите за официальными объявлениями маркетплейсов'
         }
