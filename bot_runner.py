@@ -10,39 +10,37 @@ from config import API_ID, API_HASH, TARGET_CHANNEL, BOT_TOKEN, SOURCE_CHANNELS
 logger = logging.getLogger(__name__)
 
 async def run_bot():
-    """Основная функция запуска бота с улучшенным парсингом"""
+    """Основная функция запуска бота с пользовательской сессией"""
     logger.info("=" * 60)
-    logger.info("🚀 ЗАПУСК БОТА - УЛУЧШЕННЫЙ ПАРСИНГ")
+    logger.info("🚀 ЗАПУСК БОТА - ПОЛЬЗОВАТЕЛЬСКАЯ СЕССИЯ")
     logger.info("=" * 60)
     
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN не установлен")
-        return "❌ BOT_TOKEN не установлен"
+    # Используем пользовательскую сессию для парсинга
+    user_client = None
+    bot_client = None
     
-    client = None
     try:
-        # Аутентификация
-        logger.info("1. 🔐 Аутентификация бота...")
-        client = Client(
-            "telegram_bot", 
+        # 1. Парсинг с пользовательской сессией (telegram_parser.session)
+        logger.info("1. 🔐 ПОДКЛЮЧЕНИЕ ПОЛЬЗОВАТЕЛЬСКОЙ СЕССИИ...")
+        user_client = Client(
+            "telegram_parser",  # Используем существующую сессию
             api_id=API_ID, 
             api_hash=API_HASH,
-            bot_token=BOT_TOKEN,
             workdir="./"
         )
         
-        await client.start()
-        me = await client.get_me()
-        logger.info(f"✅ Бот аутентифицирован: @{me.username}")
+        await user_client.start()
+        me = await user_client.get_me()
+        logger.info(f"✅ Пользователь аутентифицирован: {me.first_name} (@{me.username})")
         
-        # УЛУЧШЕННЫЙ ПАРСИНГ КАНАЛОВ
-        logger.info("2. 🔍 ЗАПУСК УЛУЧШЕННОГО ПАРСИНГА...")
-        parsing_results = await parse_channels_improved(client)
+        # 2. Парсинг каналов
+        logger.info("2. 🔍 ЗАПУСК ПАРСИНГА КАНАЛОВ...")
+        parsing_results = await parse_channels_with_user(user_client)
         
         all_parsed_messages = parsing_results['messages']
         channel_stats = parsing_results['stats']
         
-        # Создание поста
+        # 3. Создание поста
         ai_processor = AIProcessor()
         post_formatter = PostFormatter()
         
@@ -63,22 +61,32 @@ async def run_bot():
             structured_content = ai_processor.structure_content(texts, [])
             post_type = "РЕЗЕРВНЫЕ ДАННЫЕ"
         
-        # Форматирование и отправка
         post_content = post_formatter.format_structured_post(structured_content)
         save_post(post_content)
         
-        # Отправка поста
-        logger.info("4. 📤 ОТПРАВКА ПОСТА...")
-        max_length = 4096
-        if len(post_content) > max_length:
-            post_content = post_content[:max_length-100] + "\n\n... (пост сокращен)"
+        # 4. Отправка поста с ботом (если есть токен)
+        logger.info("4. 🤖 ОТПРАВКА ПОСТА...")
+        if BOT_TOKEN:
+            bot_client = Client(
+                "telegram_bot",
+                api_id=API_ID,
+                api_hash=API_HASH,
+                bot_token=BOT_TOKEN,
+                workdir="./"
+            )
+            await bot_client.start()
+            
+            max_length = 4096
+            if len(post_content) > max_length:
+                post_content = post_content[:max_length-100] + "\n\n... (пост сокращен)"
+            
+            await bot_client.send_message(TARGET_CHANNEL, post_content)
+            logger.info(f"✅ ПОСТ УСПЕШНО ОПУБЛИКОВАН В КАНАЛЕ {TARGET_CHANNEL}")
+        else:
+            logger.warning("⚠️ BOT_TOKEN не установлен - пост не отправлен")
         
-        await client.send_message(TARGET_CHANNEL, post_content)
-        logger.info(f"✅ ПОСТ УСПЕШНО ОПУБЛИКОВАН В КАНАЛЕ {TARGET_CHANNEL}")
-        
-        # Детальная статистика
+        # 5. Статистика
         stats_message = generate_stats_message(channel_stats, len(all_parsed_messages), post_type)
-        
         logger.info(f"🎯 ИТОГ: {stats_message}")
         
         return f"""
@@ -97,11 +105,13 @@ async def run_bot():
         logger.error(f"🔍 ДЕТАЛИ ОШИБКИ: {traceback.format_exc()}")
         return f"❌ Ошибка: {str(e)}"
     finally:
-        if client:
-            await client.stop()
+        if user_client:
+            await user_client.stop()
+        if bot_client:
+            await bot_client.stop()
 
-async def parse_channels_improved(client):
-    """Улучшенный парсинг каналов с детальной статистикой"""
+async def parse_channels_with_user(user_client):
+    """Парсинг каналов с пользовательской сессией"""
     all_messages = []
     channel_stats = {}
     
@@ -122,15 +132,14 @@ async def parse_channels_improved(client):
             logger.info(f"   {i}. 🔍 Парсим: {channel_id}")
             
             # Получаем информацию о канале
-            chat = await client.get_chat(channel_id)
+            chat = await user_client.get_chat(channel_id)
             logger.info(f"      📝 Название: {chat.title}")
-            logger.info(f"      👥 Участников: {getattr(chat, 'members_count', 'N/A')}")
             
-            # Парсим сообщения
+            # Парсим сообщения (теперь это работает с пользовательской сессией!)
             messages_count = 0
             new_messages_count = 0
             
-            async for message in client.get_chat_history(chat.id, limit=20):
+            async for message in user_client.get_chat_history(chat.id, limit=20):
                 if message.text and message.text.strip():
                     message_text = message.text.strip()
                     messages_count += 1
@@ -155,7 +164,7 @@ async def parse_channels_improved(client):
             if new_messages_count > 0:
                 logger.info(f"      ✅ Найдено {new_messages_count} новых из {messages_count} сообщений")
                 # Логируем примеры сообщений
-                for j, msg in enumerate(channel_messages[:3], 1):
+                for j, msg in enumerate(channel_messages[:2], 1):
                     logger.info(f"         📨 {j}. {msg[:80]}...")
             else:
                 logger.info(f"      ⚠️ Новых сообщений: 0 (всего сообщений: {messages_count})")

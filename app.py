@@ -19,15 +19,14 @@ except Exception as e:
 @app.route('/')
 def home():
     return """
-    <h1>🤖 Telegram Parser Bot - УЛУЧШЕННЫЙ ПАРСИНГ</h1>
+    <h1>🤖 Telegram Parser Bot - РЕАЛЬНЫЙ ПАРСИНГ</h1>
     <p>Бот для парсинга реальных данных с Telegram каналов</p>
     
     <h3>🚀 Действия:</h3>
     <ul>
-        <li><a href="/run-now">/run-now</a> - Запуск улучшенного парсинга</li>
+        <li><a href="/run-now">/run-now</a> - Запуск с пользовательской сессией</li>
         <li><a href="/health">/health</a> - Проверка работы</li>
-        <li><a href="/test-access">/test-access</a> - Тест доступа к каналам</li>
-        <li><a href="/clear-db">/clear-db</a> - Очистка базы (если много дублей)</li>
+        <li><a href="/test-parsing">/test-parsing</a> - Тест парсинга</li>
     </ul>
     
     <h3>📊 Каналы для парсинга:</h3>
@@ -43,6 +42,8 @@ def home():
         <li>@ProdaemWB</li>
         <li>@ProdaemOZON</li>
     </ul>
+    
+    <p><strong>✅ Используется пользовательская сессия для парсинга</strong></p>
     """
 
 @app.route('/health')
@@ -51,7 +52,7 @@ def health():
 
 @app.route('/run-now')
 def run_now():
-    """Запуск бота с улучшенным парсингом"""
+    """Запуск бота с пользовательской сессией"""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -64,23 +65,23 @@ def run_now():
     except Exception as e:
         return f"❌ Ошибка: {str(e)}"
 
-@app.route('/test-access')
-def test_access():
-    """Тест доступа к каналам"""
+@app.route('/test-parsing')
+def test_parsing():
+    """Тест парсинга пользовательской сессией"""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        from bot_runner import parse_channels_improved
+        from bot_runner import parse_channels_with_user
         from pyrogram import Client
-        from config import API_ID, API_HASH, BOT_TOKEN
+        from config import API_ID, API_HASH
         
-        client = Client("test_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+        user_client = Client("telegram_parser", api_id=API_ID, api_hash=API_HASH)
         
         async def test():
-            await client.start()
-            result = await parse_channels_improved(client)
-            await client.stop()
+            await user_client.start()
+            result = await parse_channels_with_user(user_client)
+            await user_client.stop()
             return result
         
         parsing_result = loop.run_until_complete(test())
@@ -90,7 +91,7 @@ def test_access():
         messages = parsing_result['messages']
         
         html_result = f"""
-        <h2>🧪 Тест доступа к каналам</h2>
+        <h2>🧪 Тест парсинга пользовательской сессией</h2>
         <p><strong>Найдено сообщений:</strong> {len(messages)}</p>
         
         <h3>📊 Статистика доступа:</h3>
@@ -135,34 +136,6 @@ def test_access():
         
     except Exception as e:
         return f"❌ Ошибка теста: {str(e)}"
-
-@app.route('/clear-db')
-def clear_db():
-    """Очистка базы данных от дубликатов"""
-    try:
-        import sqlite3
-        conn = sqlite3.connect('telegram_parser.db')
-        cursor = conn.cursor()
-        
-        # Удаляем старые сообщения (старше 7 дней)
-        cursor.execute("DELETE FROM messages WHERE created_at < datetime('now', '-7 days')")
-        deleted_messages = cursor.rowcount
-        
-        # Удаляем старые посты
-        cursor.execute("DELETE FROM posts WHERE created_at < datetime('now', '-3 days')")
-        deleted_posts = cursor.rowcount
-        
-        conn.commit()
-        conn.close()
-        
-        return f"""
-        <h2>🧹 Очистка базы данных</h2>
-        <p>✅ Удалено сообщений: {deleted_messages}</p>
-        <p>✅ Удалено постов: {deleted_posts}</p>
-        <a href="/">← Назад</a>
-        """
-    except Exception as e:
-        return f"❌ Ошибка очистки: {str(e)}"
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
