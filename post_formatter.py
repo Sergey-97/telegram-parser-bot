@@ -1,6 +1,5 @@
 import json
 from datetime import datetime
-from config import SOURCE_CHANNELS
 
 class PostFormatter:
     def __init__(self):
@@ -9,27 +8,25 @@ class PostFormatter:
     def format_structured_post(self, structured_content):
         """Форматирует структурированный контент в готовый пост"""
         try:
-            # Проверяем тип structured_content
+            # Если это строка, пытаемся распарсить
             if isinstance(structured_content, str):
-                # Если это строка, пытаемся распарсить JSON
                 try:
                     structured_content = json.loads(structured_content)
                 except json.JSONDecodeError:
-                    # Если не JSON, используем как есть
                     return self._create_simple_post(structured_content)
             
-            # Если это словарь (ожидаемая структура)
+            # Если это словарь
             if isinstance(structured_content, dict):
                 return self._format_from_dict(structured_content)
             else:
                 return self._create_simple_post(str(structured_content))
                 
         except Exception as e:
-            print(f"❌ Ошибка форматирования поста: {e}")
+            print(f"❌ Ошибка форматирования: {e}")
             return self._create_fallback_post()
 
     def _format_from_dict(self, data):
-        """Форматирует пост из словаря структурированных данных"""
+        """Форматирует пост из словаря"""
         lines = []
         
         # Заголовок
@@ -38,11 +35,11 @@ class PostFormatter:
         lines.append("")
         
         # Резюме
-        summary = data.get('summary', 'Ежедневный обзор ключевых изменений на маркетплейсах')
+        summary = data.get('summary', 'Ежедневный обзор ключевых изменений')
         lines.append(summary)
         lines.append("")
         
-        # Секции по маркетплейсам
+        # Секции
         sections = data.get('sections', {})
         
         for marketplace, content in sections.items():
@@ -55,7 +52,7 @@ class PostFormatter:
             key_points = content.get('key_points', [])
             if key_points:
                 if isinstance(key_points, list):
-                    for point in key_points[:3]:  # Ограничиваем количество пунктов
+                    for point in key_points[:3]:
                         lines.append(f"• {point}")
                 else:
                     lines.append(f"• {key_points}")
@@ -84,19 +81,12 @@ class PostFormatter:
             
             lines.append("")
         
-        # Общие рекомендации
+        # Рекомендации
         recommendations = data.get('recommendations', '')
         if recommendations:
             lines.append("🎯 **Рекомендации:**")
             lines.append(recommendations)
             lines.append("")
-        
-        # Источники
-        lines.append("📚 **Источники:**")
-        sources_text = ", ".join([f"#{channel.replace('https://t.me/', '').replace('@', '')}" 
-                                for channel in SOURCE_CHANNELS[:3]])
-        lines.append(sources_text)
-        lines.append("")
         
         # Хештеги
         lines.append("#аналитика #маркетплейсы #OZON #WB #новости")
@@ -119,8 +109,6 @@ class PostFormatter:
 
 {content}
 
-📚 Источники: {", ".join(SOURCE_CHANNELS[:3])}
-
 #аналитика #маркетплейсы #OZON #WB"""
 
     def _create_fallback_post(self):
@@ -129,14 +117,12 @@ class PostFormatter:
 
 🟠 **OZON**
 • Обновления платформы для продавцов
-• Оптимизация процессов модерации
+• Изменения в логистических процессах
 
-🔵 **WB** 
-• Изменения в логистических тарифах
-• Новые требования к карточкам товаров
+🔵 **WB**
+• Оптимизация процессов выкупа
+• Обновления в работе с возвратами
 
-🎯 **Рекомендации:** Следите за официальными объявлениями маркетплейсов и участвуйте в профессиональных сообществах.
-
-📚 **Источники:** {", ".join(SOURCE_CHANNELS[:3])}
+🎯 **Рекомендации:** Следите за официальными объявлениями маркетплейсов
 
 #аналитика #маркетплейсы #OZON #WB #новости"""

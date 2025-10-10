@@ -1,6 +1,7 @@
 import sqlite3
-import json
-from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 def init_db():
     """Инициализирует базу данных"""
@@ -30,7 +31,7 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print("✅ База данных инициализирована")
+    logger.info("✅ База данных инициализирована")
 
 def save_message(message_text, channel_url, marketplace='OTHER'):
     """Сохраняет сообщение в базу данных"""
@@ -54,21 +55,6 @@ def message_exists(message_text, channel_url):
         SELECT COUNT(*) FROM messages 
         WHERE message_text = ? AND channel_url = ?
     ''', (message_text, channel_url))
-    
-    count = cursor.fetchone()[0]
-    conn.close()
-    
-    return count > 0
-
-def post_exists(post_content):
-    """Проверяет, был ли уже отправлен такой пост за последние 24 часа"""
-    conn = sqlite3.connect('telegram_parser.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT COUNT(*) FROM posts 
-        WHERE post_content = ? AND created_at > datetime('now', '-1 day')
-    ''', (post_content,))
     
     count = cursor.fetchone()[0]
     conn.close()
